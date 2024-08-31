@@ -19,23 +19,6 @@ services:
       
 """
 
-# def generate_volumes_content():
-#     return """volumes:
-#   server-config:
-#     driver: local
-#     driver_opts:
-#       type: none
-#       o: bind
-#       device: server/config.ini
-#   client-config:
-#     driver: local
-#     driver_opts:
-#       type: none
-#       o: bind
-#       device: client/config.yaml
-
-# """
-
 def generate_client_content(client_id):
     return f"""  client{client_id}:
     container_name: client{client_id}
@@ -65,13 +48,11 @@ def generate_network_content():
 def generate_docker_compose(output_file, num_clients):
 
   base_content = generate_base_content()
-  # volumes_content = generate_volumes_content()
   network_content = generate_network_content()
 
   clients_content = "".join(generate_client_content(i) for i in range(1, num_clients + 1))
 
   full_content = base_content + clients_content + network_content
-  # full_content = base_content + clients_content + volumes_content + network_content
 
   with open(output_file, 'w') as f:
     f.write(full_content)
