@@ -40,6 +40,7 @@ def generate_network_content():
 """
 
 def generate_docker_compose(output_file, num_clients):
+  
   base_content = generate_base_content()
   network_content = generate_network_content()
 
