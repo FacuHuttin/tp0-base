@@ -8,7 +8,7 @@ services:
       - PYTHONUNBUFFERED=1
       - LOGGING_LEVEL=DEBUG
     volumes:
-      - ${PWD}/server/config.ini:/config.ini
+      - ./server/config.ini:/config.ini
     networks:
       - testing_net
       
@@ -20,7 +20,7 @@ services:
       - CLI_ID=1
       - CLI_LOG_LEVEL=DEBUG
     volumes:
-      - ${PWD}/client/config.yaml:/config.yaml
+      - ./client/config.yaml:/config.yaml
     networks:
       - testing_net
     depends_on:
@@ -34,7 +34,7 @@ services:
       - CLI_ID=2
       - CLI_LOG_LEVEL=DEBUG
     volumes:
-      - ${PWD}/client/config.yaml:/config.yaml
+      - ./client/config.yaml:/config.yaml
     networks:
       - testing_net
     depends_on:
@@ -48,7 +48,7 @@ services:
       - CLI_ID=3
       - CLI_LOG_LEVEL=DEBUG
     volumes:
-      - ${PWD}/client/config.yaml:/config.yaml
+      - ./client/config.yaml:/config.yaml
     networks:
       - testing_net
     depends_on:
@@ -62,7 +62,7 @@ services:
       - CLI_ID=4
       - CLI_LOG_LEVEL=DEBUG
     volumes:
-      - ${PWD}/client/config.yaml:/config.yaml
+      - ./client/config.yaml:/config.yaml
     networks:
       - testing_net
     depends_on:
@@ -76,7 +76,7 @@ services:
       - CLI_ID=5
       - CLI_LOG_LEVEL=DEBUG
     volumes:
-      - ${PWD}/client/config.yaml:/config.yaml
+      - ./client/config.yaml:/config.yaml
     networks:
       - testing_net
     depends_on:
