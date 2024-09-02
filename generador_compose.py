@@ -43,7 +43,9 @@ def generate_docker_compose(output_file, num_clients):
   base_content = generate_base_content()
   network_content = generate_network_content()
 
-  clients_content = "".join(generate_client_content(i) for i in range(1, num_clients + 1))
+  clients_content = ""
+  if num_clients > 0:
+    clients_content = "".join(generate_client_content(i) for i in range(1, num_clients + 1))
 
   full_content = base_content + clients_content + network_content
 
