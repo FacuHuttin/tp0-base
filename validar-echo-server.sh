@@ -8,6 +8,8 @@ RESULT="fail"
 
 RESPONSE=$(docker run --rm --network $NETWORK_NAME alpine sh -c "echo $TEST_MESSAGE | nc $SERVER_CONTAINER_NAME $SERVER_PORT")
 
+echo "RESPONSE: $RESPONSE"
+
 if [ "$RESPONSE" == "$TEST_MESSAGE" ]; then
   RESULT="success"
 fi
