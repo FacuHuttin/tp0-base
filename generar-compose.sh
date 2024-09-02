@@ -11,4 +11,4 @@ NUM_CLIENTS=$2
 echo "Nombre del archivo de salida: $OUTPUT_FILE"
 echo "Cantidad de clientes: $NUM_CLIENTS"
 
-python3 generador_compose.py "$OUTPUT_FILE" "$NUM_CLIENTS"
+python3 generador_compose.py $OUTPUT_FILE $NUM_CLIENTS
