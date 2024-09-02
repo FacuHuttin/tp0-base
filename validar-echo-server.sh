@@ -3,7 +3,7 @@
 SERVER_CONTAINER_NAME="server"
 SERVER_PORT="12345"
 NETWORK_NAME="tp0_testing_net"
-TEST_MESSAGE="Hello, Server!"
+TEST_MESSAGE="Hello"
 RESULT="fail"
 
 RESPONSE=$(docker run --rm --network $NETWORK_NAME alpine sh -c "echo $TEST_MESSAGE | nc $SERVER_CONTAINER_NAME $SERVER_PORT")
