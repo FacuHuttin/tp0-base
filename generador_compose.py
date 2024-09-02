@@ -1,7 +1,5 @@
 import sys
 
-PWD = "${PWD}"
-
 def generate_base_content():
     return f"""name: tp0
 services:
@@ -13,7 +11,7 @@ services:
       - PYTHONUNBUFFERED=1
       - LOGGING_LEVEL=DEBUG
     volumes:
-      - {PWD}/server/config.ini:/config.ini
+      - ./server/config.ini:/config.ini
     networks:
       - testing_net
       
@@ -28,7 +26,7 @@ def generate_client_content(client_id):
       - CLI_ID={client_id}
       - CLI_LOG_LEVEL=DEBUG
     volumes:
-      - {PWD}/client/config.yaml:/config.yaml
+      - ./client/config.yaml:/config.yaml
     networks:
       - testing_net
     depends_on:
