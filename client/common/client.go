@@ -52,63 +52,67 @@ func (c *Client) createClientSocket() error {
 	return nil
 }
 
+func (c *Client) terminate_loop() {
+	if c.conn != nil {
+			c.conn.Close()
+	}
+	log.Infof("action: close_connection_with_server | result: success | client_id: %v",
+			c.config.ID,
+	)
+}
+
 // StartClientLoop Send messages to the client until some time threshold is met
 func (c *Client) StartClientLoop() {
 
 	sigChannel := make(chan os.Signal, 1)
 	signal.Notify(sigChannel, syscall.SIGTERM)
 
-	terminate := false
-
-	go func() {
-		<-sigChannel
-		terminate = true
-		if c.conn != nil {
-				c.conn.Close()
-		}
-		log.Infof("action: close_connection_with_server | result: success | client_id: %v",
-				c.config.ID,
-		)
-	}()
-
 	// There is an autoincremental msgID to identify every message sent
 	// Messages if the message amount threshold has not been surpassed
 	for msgID := 1; msgID <= c.config.LoopAmount; msgID++ {
-		if terminate {
+		select {
+		case <-sigChannel:
+			c.terminate_loop()
 			return
-		}
-		// Create the connection the server in every loop iteration. Send an
-		c.createClientSocket()
-
-		// TODO: Modify the send to avoid short-write
-		fmt.Fprintf(
-			c.conn,
-			"[CLIENT %v] Message N°%v\n",
-			c.config.ID,
-			msgID,
-		)
-		msg, err := bufio.NewReader(c.conn).ReadString('\n')
-
-		c.conn.Close()
-
-		if err != nil {
-			log.Errorf("action: receive_message | result: fail | client_id: %v | error: %v",
+		default:
+			// Create the connection the server in every loop iteration. Send an
+			c.createClientSocket()
+	
+			// TODO: Modify the send to avoid short-write
+			fmt.Fprintf(
+				c.conn,
+				"[CLIENT %v] Message N°%v\n",
 				c.config.ID,
-				err,
+				msgID,
 			)
-			return
+			select {
+			case <-sigChannel:
+				c.terminate_loop()
+				return
+			default:
+				msg, err := bufio.NewReader(c.conn).ReadString('\n')
+				c.conn.Close()
+		
+				if err != nil {
+					log.Errorf("action: receive_message | result: fail | client_id: %v | error: %v",
+						c.config.ID,
+						err,
+					)
+					return
+				}
+		
+				log.Infof("action: receive_message | result: success | client_id: %v | msg: %v",
+					c.config.ID,
+					msg,
+				)
+				select {
+				case <-sigChannel:
+					return
+				case <-time.After(c.config.LoopPeriod):
+					// Wait a time between sending one message and the next one
+				}
+			}
 		}
-
-		log.Infof("action: receive_message | result: success | client_id: %v | msg: %v",
-			c.config.ID,
-			msg,
-		)
-		if terminate {
-			return
-		}
-		// Wait a time between sending one message and the next one
-		time.Sleep(c.config.LoopPeriod)
-
 	}
 	log.Infof("action: loop_finished | result: success | client_id: %v", c.config.ID)
 }
