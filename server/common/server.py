@@ -76,5 +76,5 @@ class Server:
         except OSError as e:
             if self._shutdown_flag:
                 return None 
-            logging.error(f"action: accept_connection | result: fail | error: {e}")
+            logging.error(f"action: accept_connections | result: fail | error: {e}")
             return None
