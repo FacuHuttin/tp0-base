@@ -1,14 +1,19 @@
 import socket
 import logging
 import signal
+from .utils import Bet
+
+class ServerShutdownError(Exception):
+    pass
 
 class Server:
-    def __init__(self, port, listen_backlog):
+    def __init__(self, port, listen_backlog, national_lottery_center):
         # Initialize server socket
         self._server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._server_socket.bind(('', port))
         self._server_socket.listen(listen_backlog)
         self._shutdown_flag = False
+        self.national_lottery_center = national_lottery_center
 
         signal.signal(signal.SIGTERM, self._handle_sigterm)
 
@@ -24,8 +29,6 @@ class Server:
         finishes, servers starts to accept new connections again
         """
 
-        # TODO: Modify this program to handle signal to graceful shutdown
-        # the server
         while not self._shutdown_flag:
             try:
                 self._server_socket.settimeout(1.0)
@@ -46,16 +49,104 @@ class Server:
         client socket will also be closed
         """
         try:
-            # TODO: Modify the receive to avoid short-reads
-            msg = client_sock.recv(1024).rstrip().decode('utf-8')
+            if self._shutdown_flag:
+                raise ServerShutdownError("Server is shutting down")
+            bet: Bet = self.__read_bet_message(client_sock)
             addr = client_sock.getpeername()
-            logging.info(f'action: receive_message | result: success | ip: {addr[0]} | msg: {msg}')
-            # TODO: Modify the send to avoid short-writes
-            client_sock.send("{}\n".format(msg).encode('utf-8'))
+            logging.info(f'action: receive_bet_message | result: success | ip: {addr[0]}')
+            byte_msg = bytes([1])
+            if self._shutdown_flag:
+                raise ServerShutdownError("Server is shutting down")
+            self.__send_all_to_socket(client_sock, byte_msg)
+            if self._shutdown_flag:
+                raise ServerShutdownError("Server is shutting down")
+            self.national_lottery_center.store_bets_from_agency([bet])
+            logging.info(f'action: apuesta_almacenada | result: success | dni: {bet.document} | numero: {bet.number}')
+        except ServerShutdownError:
+            logging.info(f"action: client_socket_shutdown | result: success | ip: {addr[0]}")
         except OSError as e:
-            logging.error("action: receive_message | result: fail | error: {e}")
+            logging.error(f"action: receive_message | result: fail | error: {e}")
         finally:
             client_sock.close()
+
+    def __read_bet_message(self, client_sock):
+        bytes_agency_id = self.__recv_all_from_socket(client_sock, 1)
+        if not bytes_agency_id:
+            raise ValueError("Failed to read agency_id from message")
+        agency_id = int.from_bytes(bytes_agency_id, byteorder='big')
+
+        if self._shutdown_flag:
+            raise ServerShutdownError("Server is shutting down")
+        bytes_name_length = self.__recv_all_from_socket(client_sock, 1)
+        if not bytes_name_length:
+            raise ValueError("Failed to read name length from message")
+        name_length = int.from_bytes(bytes_name_length, byteorder='big')
+
+        if self._shutdown_flag:
+            raise ServerShutdownError("Server is shutting down")
+        bytes_name = self.__recv_all_from_socket(client_sock, name_length)
+        if not bytes_name:
+            raise ValueError("Failed to read name from message")
+        name = bytes_name.decode('utf-8')
+
+        if self._shutdown_flag:
+            raise ServerShutdownError("Server is shutting down")
+        bytes_surname_length = self.__recv_all_from_socket(client_sock, 1)
+        if not bytes_surname_length:
+            raise ValueError("Failed to read surname length from message")
+        surname_length = int.from_bytes(bytes_surname_length, byteorder='big')
+
+        if self._shutdown_flag:
+            raise ServerShutdownError("Server is shutting down")
+        bytes_surname = self.__recv_all_from_socket(client_sock, surname_length)
+        if not bytes_surname:
+            raise ValueError("Failed to read surname from message")
+        surname = bytes_surname.decode('utf-8')
+
+        if self._shutdown_flag:
+            raise ServerShutdownError("Server is shutting down")
+        bytes_document = self.__recv_all_from_socket(client_sock, 4)
+        if not bytes_document:
+            raise ValueError("Failed to read document from message")
+        document = int.from_bytes(bytes_document, byteorder='big')
+
+        if self._shutdown_flag:
+            raise ServerShutdownError("Server is shutting down")
+        bytes_birthday = self.__recv_all_from_socket(client_sock, 10)
+        if not bytes_birthday:
+            raise ValueError("Failed to read birthday from message")
+        birthday = bytes_birthday.decode('utf-8')
+
+        if self._shutdown_flag:
+            raise ServerShutdownError("Server is shutting down")
+        bytes_lottery_num = self.__recv_all_from_socket(client_sock, 2)
+        if not bytes_lottery_num:
+            raise ValueError("Failed to read document from message")
+        lottery_num = int.from_bytes(bytes_lottery_num, byteorder='big')
+
+        return Bet(agency_id, name, surname, document, birthday, lottery_num)
+
+
+    def __send_all_to_socket(self, sock, data):
+        total_sent = 0
+        while total_sent < len(data):
+            if self._shutdown_flag:
+                raise ServerShutdownError("Server is shutting down")
+            sent = sock.send(data[total_sent:])
+            if sent == 0:
+                raise RuntimeError("Socket connection broken")
+            total_sent += sent
+
+    def __recv_all_from_socket(self, sock, length):
+        data = bytearray()
+        while len(data) < length:
+            if self._shutdown_flag:
+                raise ServerShutdownError("Server is shutting down")
+            packet = sock.recv(length - len(data))
+            if not packet:
+                return None
+            data.extend(packet)
+        return data
 
     def __accept_new_connection(self):
         """

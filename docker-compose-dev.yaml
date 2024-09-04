@@ -6,7 +6,6 @@ services:
     entrypoint: python3 /main.py
     environment:
       - PYTHONUNBUFFERED=1
-      - LOGGING_LEVEL=DEBUG
     volumes:
       - ./server/config.ini:/config.ini
     networks:
@@ -18,7 +17,11 @@ services:
     entrypoint: /client
     environment:
       - CLI_ID=1
-      - CLI_LOG_LEVEL=DEBUG
+      - CLI_NAME=Santiago Lionel
+      - CLI_SURNAME=Lorca
+      - CLI_DNI=30904465
+      - CLI_BIRTHDAY=1990-01-01
+      - CLI_LOTTERYNUM=4263
     volumes:
       - ./client/config.yaml:/config.yaml
     networks:
@@ -32,7 +35,11 @@ services:
     entrypoint: /client
     environment:
       - CLI_ID=2
-      - CLI_LOG_LEVEL=DEBUG
+      - CLI_NAME=Facundo
+      - CLI_SURNAME=Huttin
+      - CLI_DNI=43746167
+      - CLI_BIRTHDAY=2001-01-01
+      - CLI_LOTTERYNUM=3942
     volumes:
       - ./client/config.yaml:/config.yaml
     networks:
@@ -46,7 +53,11 @@ services:
     entrypoint: /client
     environment:
       - CLI_ID=3
-      - CLI_LOG_LEVEL=DEBUG
+      - CLI_NAME=Maria
+      - CLI_SURNAME=Gonzalez
+      - CLI_DNI=12345678
+      - CLI_BIRTHDAY=1985-05-15
+      - CLI_LOTTERYNUM=5678
     volumes:
       - ./client/config.yaml:/config.yaml
     networks:
@@ -60,7 +71,11 @@ services:
     entrypoint: /client
     environment:
       - CLI_ID=4
-      - CLI_LOG_LEVEL=DEBUG
+      - CLI_NAME=Juan
+      - CLI_SURNAME=Martinez
+      - CLI_DNI=87654321
+      - CLI_BIRTHDAY=1992-07-20
+      - CLI_LOTTERYNUM=1234
     volumes:
       - ./client/config.yaml:/config.yaml
     networks:
@@ -74,7 +89,11 @@ services:
     entrypoint: /client
     environment:
       - CLI_ID=5
-      - CLI_LOG_LEVEL=DEBUG
+      - CLI_NAME=Ana
+      - CLI_SURNAME=Rodriguez
+      - CLI_DNI=23456789
+      - CLI_BIRTHDAY=1988-03-10
+      - CLI_LOTTERYNUM=7890
     volumes:
       - ./client/config.yaml:/config.yaml
     networks:

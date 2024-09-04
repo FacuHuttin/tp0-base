@@ -37,6 +37,11 @@ func InitConfig() (*viper.Viper, error) {
 	v.BindEnv("loop", "period")
 	v.BindEnv("loop", "amount")
 	v.BindEnv("log", "level")
+	v.BindEnv("name")
+	v.BindEnv("surname")
+	v.BindEnv("dni")
+	v.BindEnv("birthday")
+	v.BindEnv("lotterynum")
 
 	// Try to read configuration from config file. If config file
 	// does not exists then ReadInConfig will fail but configuration
@@ -88,6 +93,13 @@ func PrintConfig(v *viper.Viper) {
 		v.GetDuration("loop.period"),
 		v.GetString("log.level"),
 	)
+	log.Debugf("action: env_config | name: %s | surname: %s | dni: %s | birthday: %s | lotterynum: %s",
+		v.GetString("name"),
+		v.GetString("surname"),
+		v.GetString("dni"),
+		v.GetString("birthday"),
+		v.GetString("lotterynum"),
+	)
 }
 
 func main() {
@@ -109,7 +121,14 @@ func main() {
 		LoopAmount:    v.GetInt("loop.amount"),
 		LoopPeriod:    v.GetDuration("loop.period"),
 	}
+	bet := common.NewBet(v.GetString("name"),
+		v.GetString("surname"),
+		v.GetString("dni"),
+		v.GetString("birthday"),
+		v.GetString("lotterynum"))
 
-	client := common.NewClient(clientConfig)
-	client.StartClientLoop()
+	var bets []common.Bet
+	bets = append(bets, *bet)
+	agency := common.NewAgency(clientConfig, bets)
+	agency.StartAgency()
 }
