@@ -25,17 +25,11 @@ class Server:
         self._shutdown_flag = True
 
     def run(self):
-        """
-        Dummy Server loop
-
-        Server that accept a new connections and establishes a
-        communication with a client. After client with communucation
-        finishes, servers starts to accept new connections again
-        """
 
         while not self._shutdown_flag:
             if self.scheduler.amount_of_agencies() == self.max_amount_of_agencies:
                 if self.scheduler.all_bets_stored():
+                    logging.info("action: sorteo | result: success")
                     winners_dict = self.national_lottery_center.get_winners()
                     while self.scheduler.amount_of_agencies() > 0:
                         agency = self.scheduler.pop_agency()
@@ -70,18 +64,12 @@ class Server:
         logging.info("action: close_server_socket | result: success")
 
     def __handle_client_connection(self, agency, sending_winners=False):
-        """
-        Read message from a specific client socket and closes the socket
-
-        If a problem arises in the communication with the client, the
-        client socket will also be closed
-        """
         if sending_winners:
             try:
                 if self._shutdown_flag:
                     raise ServerShutdownError("Server is shutting down")
                 addr = agency.socket.getpeername()
-                
+
                 data = bytearray()
 
                 # Append the WINNERS_MESSAGE_ID (1 byte)
