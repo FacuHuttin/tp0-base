@@ -6,6 +6,25 @@ import (
 	"strconv"
 )
 
+func encode_batch_message(bets []Bet, clientID string) ([]byte, error) {
+	var data []byte
+
+	// Add the number of bets as a uint8
+	numBets := uint8(len(bets))
+	data = append(data, numBets)
+
+	// Encode each bet and append to data
+	for _, bet := range bets {
+		encodedBet, err := encode_bet_message(&bet, clientID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to encode bet: %v", err)
+		}
+		data = append(data, encodedBet...)
+	}
+
+	return data, nil
+}
+
 func encode_bet_message(b *Bet, agencyId string) ([]uint8, error) {
 	var data []uint8
 

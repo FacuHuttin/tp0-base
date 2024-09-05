@@ -17,6 +17,7 @@ type ClientConfig struct {
 	ServerAddress string
 	LoopAmount    int
 	LoopPeriod    time.Duration
+	BatchMaxAmount int
 }
 
 // Client used by the LotteryAgency to send bets to the NationalLotteryCenter (server)
@@ -50,35 +51,48 @@ func (c *Client) terminate_loop() {
 	)
 }
 
+// Custom min function
+func min(a, b int) int {
+	if a < b {
+			return a
+	}
+	return b
+}
+
 // StartClientLoop Send messages to the client until some time threshold is met
 func (c *Client) StartClientLoop(bets []Bet) {
 
 	sigChannel := make(chan os.Signal, 1)
 	signal.Notify(sigChannel, syscall.SIGTERM)
-
-	err := c.createClientSocket()
-	if err != nil {
-		return
-	}
-
-	for i := 0; i < len(bets); i++ {
+	
+	for i := 0; i < len(bets); {
+		err := c.createClientSocket()
+		if err != nil {
+			return
+		}
 		select {
 		case <-sigChannel:
 			c.terminate_loop()
 			return
 		default:
-			bet := bets[i]
-			encodedBet, err := encode_bet_message(&bet, c.config.ID)
+			// Create a batch of bets
+			batchSize := min(c.config.BatchMaxAmount, len(bets)-i)
+			batch := bets[i : i+batchSize]
+			i += batchSize
+
+			// Encode the batch of bets
+			encodedBatch, err := encode_batch_message(batch, c.config.ID)
 			if err != nil {
-				log.Errorf("action: encode_bet_message | result: fail | client_id: %v | error: %v",
+				log.Errorf("action: encode_batch_message | result: fail | client_id: %v | error: %v",
 					c.config.ID,
 					err,
 				)
 				continue
 			}
-			_, err = c.socket.WriteFull(encodedBet)
+
+			_, err = c.socket.WriteFull(encodedBatch)
 			if err != nil {
-				log.Errorf("action: write_bet_message_to_server | result: fail | client_id: %v | error: %v",
+				log.Errorf("action: write_batch_message_to_server | result: fail | client_id: %v | error: %v",
 					c.config.ID,
 					err,
 				)
@@ -111,14 +125,15 @@ func (c *Client) StartClientLoop(bets []Bet) {
 					continue
 				}
 
-				log.Infof("action: apuesta_enviada | result: success | dni: %d | numero: %d",
-					bet.DNI,
-					bet.LotteryNum,
+				log.Infof("action: batch_sent | result: success | client_id: %v | batch_size: %d",
+					c.config.ID,
+					batchSize,
 				)
 				select {
 				case <-sigChannel:
 					return
 				case <-time.After(c.config.LoopPeriod):
+					c.socket.Close()
 				}
 			}
 		}

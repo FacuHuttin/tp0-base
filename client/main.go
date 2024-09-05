@@ -37,11 +37,8 @@ func InitConfig() (*viper.Viper, error) {
 	v.BindEnv("loop", "period")
 	v.BindEnv("loop", "amount")
 	v.BindEnv("log", "level")
-	v.BindEnv("name")
-	v.BindEnv("surname")
-	v.BindEnv("dni")
-	v.BindEnv("birthday")
-	v.BindEnv("lotterynum")
+	v.BindEnv("batch", "maxAmount")
+	v.BindEnv("betsfilepath")
 
 	// Try to read configuration from config file. If config file
 	// does not exists then ReadInConfig will fail but configuration
@@ -93,12 +90,9 @@ func PrintConfig(v *viper.Viper) {
 		v.GetDuration("loop.period"),
 		v.GetString("log.level"),
 	)
-	log.Debugf("action: env_config | name: %s | surname: %s | dni: %s | birthday: %s | lotterynum: %s",
-		v.GetString("name"),
-		v.GetString("surname"),
-		v.GetString("dni"),
-		v.GetString("birthday"),
-		v.GetString("lotterynum"),
+	log.Debugf("action: extra_configs | betsfilepath: %s | BatchMaxAmount: %s",
+		v.GetString("betsfilepath"),
+		v.GetInt("batch.maxAmount"),
 	)
 }
 
@@ -120,15 +114,22 @@ func main() {
 		ID:            v.GetString("id"),
 		LoopAmount:    v.GetInt("loop.amount"),
 		LoopPeriod:    v.GetDuration("loop.period"),
+		BatchMaxAmount: v.GetInt("batch.maxAmount"),
 	}
-	bet := common.NewBet(v.GetString("name"),
-		v.GetString("surname"),
-		v.GetString("dni"),
-		v.GetString("birthday"),
-		v.GetString("lotterynum"))
+	// bet := common.NewBet(v.GetString("name"),
+	// 	v.GetString("surname"),
+	// 	v.GetString("dni"),
+	// 	v.GetString("birthday"),
+	// 	v.GetString("lotterynum"))
 
-	var bets []common.Bet
-	bets = append(bets, *bet)
+	// var bets []common.Bet
+	// bets = append(bets, *bet)
+
+	bets, err := common.GetBetsFromCsv(v.GetString("betsfilepath"))
+	if err != nil {
+		log.Criticalf("Failed to read bets from zip: %v", err)
+		return
+	}
 	agency := common.NewAgency(clientConfig, bets)
 	agency.StartAgency()
 }

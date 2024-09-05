@@ -48,26 +48,55 @@ class Server:
         If a problem arises in the communication with the client, the
         client socket will also be closed
         """
+        addr = client_sock.getpeername()
+
         try:
             if self._shutdown_flag:
                 raise ServerShutdownError("Server is shutting down")
-            bet: Bet = self.__read_bet_message(client_sock)
-            addr = client_sock.getpeername()
-            logging.info(f'action: receive_bet_message | result: success | ip: {addr[0]}')
+            bets, bets_amount = self.__read_batch_message(client_sock)
+            if len(bets) == 0:
+                error_code = bytes([2])  # Example error code for reading failure
+                self.__send_all_to_socket(client_sock, error_code)
+                client_sock.close()
+                return
+            logging.info(f'action: apuesta_recibida | result: success | cantidad: {bets_amount}')
+            
             byte_msg = bytes([1])
             if self._shutdown_flag:
                 raise ServerShutdownError("Server is shutting down")
             self.__send_all_to_socket(client_sock, byte_msg)
             if self._shutdown_flag:
                 raise ServerShutdownError("Server is shutting down")
-            self.national_lottery_center.store_bets_from_agency([bet])
-            logging.info(f'action: apuesta_almacenada | result: success | dni: {bet.document} | numero: {bet.number}')
+            
+            self.national_lottery_center.store_bets_from_agency(bets)
+            logging.info(f'action: apuestas_almacenadas | result: success | cantidad: {bets_amount}')
         except ServerShutdownError:
             logging.info(f"action: client_socket_shutdown | result: success | ip: {addr[0]}")
         except OSError as e:
             logging.error(f"action: receive_message | result: fail | error: {e}")
         finally:
             client_sock.close()
+
+    def __read_batch_message(self, client_sock):
+        try:
+            bytes_bets_amount = self.__recv_all_from_socket(client_sock, 1)
+            if not bytes_bets_amount:
+                raise ValueError("Failed to read bets amount from message")
+            bets_amount = int.from_bytes(bytes_bets_amount, byteorder='big')
+
+            bets = []
+
+            for _ in range(0, bets_amount):
+                if self._shutdown_flag:
+                    raise ServerShutdownError("Server is shutting down")
+                bets.append(self.__read_bet_message(client_sock))
+            
+            return bets, bets_amount
+        except ServerShutdownError:
+            raise
+        except Exception as e:
+            logging.error(f'action: apuesta_recibida | result: fail | cantidad: {bets_amount} | error: {e}')
+            return [], bets_amount
 
     def __read_bet_message(self, client_sock):
         bytes_agency_id = self.__recv_all_from_socket(client_sock, 1)
