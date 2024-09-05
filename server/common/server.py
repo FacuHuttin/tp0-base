@@ -2,18 +2,22 @@ import socket
 import logging
 import signal
 from .utils import Bet
+from .scheduler import Scheduler
+from .constants import ERROR_MESSAGE_ID, ACK_MESSAGE_ID, WINNERS_MESSAGE_ID, BET_BATCH_MESSAGE_ID
 
 class ServerShutdownError(Exception):
     pass
 
 class Server:
-    def __init__(self, port, listen_backlog, national_lottery_center):
+    def __init__(self, port, listen_backlog, max_amount_of_agencies, national_lottery_center):
         # Initialize server socket
         self._server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._server_socket.bind(('', port))
         self._server_socket.listen(listen_backlog)
         self._shutdown_flag = False
         self.national_lottery_center = national_lottery_center
+        self.max_amount_of_agencies = max_amount_of_agencies
+        self.scheduler = Scheduler()
 
         signal.signal(signal.SIGTERM, self._handle_sigterm)
 
@@ -30,67 +34,159 @@ class Server:
         """
 
         while not self._shutdown_flag:
-            try:
-                self._server_socket.settimeout(1.0)
-                client_sock = self.__accept_new_connection()
-                if client_sock:
-                    self.__handle_client_connection(client_sock)
-            except socket.timeout:
-                continue
-
+            if self.scheduler.amount_of_agencies() == self.max_amount_of_agencies:
+                if self.scheduler.all_bets_stored():
+                    winners_dict = self.national_lottery_center.get_winners()
+                    while self.scheduler.amount_of_agencies() > 0:
+                        agency = self.scheduler.pop_agency()
+                        agency.winners = winners_dict.get(agency.id, [])
+                        self.__handle_client_connection(agency, sending_winners=True)
+                        agency.socket.close()
+                    break
+                else:
+                    next_agency = self.scheduler.get_next_agency()
+                    if next_agency:
+                        self.__handle_client_connection(next_agency)
+            else:
+                try:
+                    self._server_socket.settimeout(1.0)
+                    client_sock = self.__accept_new_connection()
+                    if client_sock:
+                        self.scheduler.add_agency(client_sock)
+                        next_agency = self.scheduler.get_next_agency()
+                        if next_agency:
+                            self.__handle_client_connection(next_agency)
+                except socket.timeout:
+                    if self.scheduler.amount_of_agencies() == 0:
+                        continue
+                    next_agency = self.scheduler.get_next_agency()
+                    if next_agency:
+                        self.__handle_client_connection(next_agency)
         self._server_socket.close()
+        if self._shutdown_flag:
+            while self.scheduler.amount_of_agencies() > 0:
+                agency = self.scheduler.pop_agency()
+                agency.socket.close()
         logging.info("action: close_server_socket | result: success")
 
-    def __handle_client_connection(self, client_sock):
+    def __handle_client_connection(self, agency, sending_winners=False):
         """
         Read message from a specific client socket and closes the socket
 
         If a problem arises in the communication with the client, the
         client socket will also be closed
         """
-        addr = client_sock.getpeername()
+        if sending_winners:
+            try:
+                if self._shutdown_flag:
+                    raise ServerShutdownError("Server is shutting down")
+                addr = agency.socket.getpeername()
+                
+                data = bytearray()
 
+                # Append the WINNERS_MESSAGE_ID (1 byte)
+                data.extend(WINNERS_MESSAGE_ID.to_bytes(1, byteorder='big'))
+
+                # Append the amount of winners (1 byte)
+                data.extend(len(agency.winners).to_bytes(1, byteorder='big'))
+
+                # Append each winner as uint32 (4 bytes each)
+                winners = agency.winners
+                for winner in winners:
+                    data.extend(int(winner).to_bytes(4, byteorder='big'))
+
+                if self._shutdown_flag:
+                    raise ServerShutdownError("Server is shutting down")
+                self.__send_all_to_socket(agency.socket, data)
+
+                self.__read_confirmation_message(agency)
+
+                logging.info(f'action: ganadores_enviados | result: success | cantidad: {len(winners)}')
+            except ServerShutdownError:
+                logging.info(f"action: client_socket_shutdown | result: success | ip: {addr[0]}")
+            except OSError as e:
+                if self._shutdown_flag:
+                    logging.info(f"action: client_socket_shutdown | result: success | ip: {addr[0]}")
+                else:
+                    logging.error(f"action: receive_message | result: fail | error: {e}")
+        else:
+            try:
+                if self._shutdown_flag:
+                    raise ServerShutdownError("Server is shutting down")
+                addr = agency.socket.getpeername()
+                if self._shutdown_flag:
+                    raise ServerShutdownError("Server is shutting down")
+                bets, bets_amount, is_last_batch, agency_id = self.__read_batch_message(agency.socket)
+                if len(bets) == 0:
+                    error_code = bytes([ERROR_MESSAGE_ID])
+                    self.__send_all_to_socket(agency.socket, error_code)
+                    agency.socket.close()
+                    return
+                logging.info(f'action: apuesta_recibida | result: success | cantidad: {bets_amount}')
+                if not agency.id:
+                    agency.id = agency_id
+                byte_msg = bytes([ACK_MESSAGE_ID])
+
+                if self._shutdown_flag:
+                    raise ServerShutdownError("Server is shutting down")
+                self.__send_all_to_socket(agency.socket, byte_msg)
+
+                if self._shutdown_flag:
+                    raise ServerShutdownError("Server is shutting down")
+                self.national_lottery_center.store_bets_from_agency(bets)
+
+                logging.info(f'action: apuestas_almacenadas | result: success | cantidad: {bets_amount}')
+                if is_last_batch:
+                    agency.bets_stored = True
+            except ServerShutdownError:
+                logging.info(f"action: client_socket_shutdown | result: success | ip: {addr[0]}")
+            except OSError as e:
+                logging.error(f"action: receive_message | result: fail | error: {e}")
+
+    def __read_confirmation_message(self, agency):
         try:
-            if self._shutdown_flag:
-                raise ServerShutdownError("Server is shutting down")
-            bets, bets_amount = self.__read_batch_message(client_sock)
-            if len(bets) == 0:
-                error_code = bytes([2])  # Example error code for reading failure
-                self.__send_all_to_socket(client_sock, error_code)
-                client_sock.close()
-                return
-            logging.info(f'action: apuesta_recibida | result: success | cantidad: {bets_amount}')
-            
-            byte_msg = bytes([1])
-            if self._shutdown_flag:
-                raise ServerShutdownError("Server is shutting down")
-            self.__send_all_to_socket(client_sock, byte_msg)
-            if self._shutdown_flag:
-                raise ServerShutdownError("Server is shutting down")
-            
-            self.national_lottery_center.store_bets_from_agency(bets)
-            logging.info(f'action: apuestas_almacenadas | result: success | cantidad: {bets_amount}')
-        except ServerShutdownError:
-            logging.info(f"action: client_socket_shutdown | result: success | ip: {addr[0]}")
-        except OSError as e:
-            logging.error(f"action: receive_message | result: fail | error: {e}")
-        finally:
-            client_sock.close()
+            byte_message_id = self.__recv_all_from_socket(agency.socket, 1)
+            if not byte_message_id:
+                raise ValueError("Failed to read message_id from confirm message")
+            message_id = int.from_bytes(byte_message_id, byteorder='big')
+            if message_id != ACK_MESSAGE_ID:
+                raise ValueError(f"Invalid message id, expected {ACK_MESSAGE_ID} but received {message_id}")
+        except Exception as e:
+            logging.error(f'action: read_confirmation_message | result: fail | error: {e}')
 
     def __read_batch_message(self, client_sock):
         try:
-            bytes_bets_amount = self.__recv_all_from_socket(client_sock, 1)
-            if not bytes_bets_amount:
-                raise ValueError("Failed to read bets amount from message")
-            bets_amount = int.from_bytes(bytes_bets_amount, byteorder='big')
+            byte_message_id = self.__recv_all_from_socket(client_sock, 1)
+            if not byte_message_id:
+                raise ValueError("Failed to read message_id from message")
+            message_id = int.from_bytes(byte_message_id, byteorder='big')
+
+            if message_id != BET_BATCH_MESSAGE_ID:
+                raise ValueError(f"Invalid message id, expected {BET_BATCH_MESSAGE_ID} but received {message_id}")
 
             if self._shutdown_flag:
                 raise ServerShutdownError("Server is shutting down")
 
-            bytes_agency_id = self.__recv_all_from_socket(client_sock, 1)
-            if not bytes_agency_id:
+            byte_agency_id = self.__recv_all_from_socket(client_sock, 1)
+            if not byte_agency_id:
                 raise ValueError("Failed to read agency_id from message")
-            agency_id = int.from_bytes(bytes_agency_id, byteorder='big')
+            agency_id = int.from_bytes(byte_agency_id, byteorder='big')
+
+            if self._shutdown_flag:
+                raise ServerShutdownError("Server is shutting down")
+            
+            byte_last_bets_batch = self.__recv_all_from_socket(client_sock, 1)
+            if not byte_last_bets_batch:
+                raise ValueError("Failed to read last_bets_batch flag from message")
+            last_bets_batch: bool = int.from_bytes(byte_last_bets_batch, byteorder='big')
+
+            if self._shutdown_flag:
+                raise ServerShutdownError("Server is shutting down")
+
+            byte_bets_amount = self.__recv_all_from_socket(client_sock, 1)
+            if not byte_bets_amount:
+                raise ValueError("Failed to read bets amount from message")
+            bets_amount = int.from_bytes(byte_bets_amount, byteorder='big')
 
             bets = []
 
@@ -99,17 +195,15 @@ class Server:
                     raise ServerShutdownError("Server is shutting down")
                 bets.append(self.__read_bet_message(client_sock, agency_id))
             
-            return bets, bets_amount
+            return bets, bets_amount, last_bets_batch, agency_id
         except ServerShutdownError:
             raise
         except Exception as e:
             logging.error(f'action: apuesta_recibida | result: fail | cantidad: {bets_amount} | error: {e}')
-            return [], bets_amount
+            return [], bets_amount, last_bets_batch, agency_id
 
     def __read_bet_message(self, client_sock, agency_id):
 
-        if self._shutdown_flag:
-            raise ServerShutdownError("Server is shutting down")
         bytes_name_length = self.__recv_all_from_socket(client_sock, 1)
         if not bytes_name_length:
             raise ValueError("Failed to read name length from message")

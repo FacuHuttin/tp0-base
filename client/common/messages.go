@@ -4,14 +4,15 @@ import (
 	"encoding/binary"
 	"fmt"
 	"strconv"
+	"os"
 )
 
-func encode_batch_message(bets []Bet, clientID string) ([]byte, error) {
+func encode_batch_message(bets []Bet, clientID string, lastBetsBatch bool) ([]byte, error) {
 	var data []byte
 
-	// Add the number of bets as a uint8
-	numBets := uint8(len(bets))
-	data = append(data, numBets)
+	// Add the message id number
+	msgId := uint8(BET_BATCH_MESSAGE_ID)
+	data = append(data, msgId)
 
 	// Convert Agency ID to byte and encode it
 	agencyIdNum, err := strconv.Atoi(clientID)
@@ -19,6 +20,17 @@ func encode_batch_message(bets []Bet, clientID string) ([]byte, error) {
 		return nil, fmt.Errorf("invalid agencyId: %v", clientID)
 	}
 	data = append(data, uint8(agencyIdNum))
+	
+	// Add the last batch flag
+	if lastBetsBatch {
+		data = append(data, 1)
+	} else {
+		data = append(data, 0)
+	}
+
+	// Add the number of bets
+	numBets := uint8(len(bets))
+	data = append(data, numBets)
 
 	// Encode each bet and append to data
 	for _, bet := range bets {
@@ -65,17 +77,67 @@ func encode_bet_message(b *Bet) ([]uint8, error) {
 }
 
 func decode_confirmation_message(data []byte) error {
-	if len(data) < 1 {
-		return fmt.Errorf("data is too short to contain a confirmation message")
-	}
 
 	// Read the confirmation message (uint8)
 	confirmationMessage := data[0]
 
 	// Check the value of the confirmation message
-	if confirmationMessage == 1 {
+	if confirmationMessage == ACK_MESSAGE_ID {
 		return nil
+	} else if confirmationMessage == ERROR_MESSAGE_ID {
+		return fmt.Errorf("server returned error from confirmation message")
 	} else {
-		return fmt.Errorf("confirmation message is not 1, got %d", confirmationMessage)
+		return fmt.Errorf("invalid confirmation message: %d", confirmationMessage)
 	}
+}
+
+func decode_winners_message(serverSocket *TCPConn, sigChannel chan os.Signal) (int, error) {
+	buffer := make([]byte, 1)
+
+	// Read the ID of the winners message
+	select {
+	case <-sigChannel:
+		return 0, fmt.Errorf("operation interrupted by SIGTERM")
+	default:
+	_, err := serverSocket.ReadFull(buffer)
+		if err != nil {
+			return 0, fmt.Errorf("failed to read winners message: %v", err)
+		}
+	}
+
+	id_winner_message := int(buffer[0])
+	if id_winner_message != WINNERS_MESSAGE_ID {
+		return 0, fmt.Errorf("invalid winners message id: %d", id_winner_message)
+	}
+
+	// Read the number of winners
+	select {
+	case <-sigChannel:
+		return 0, fmt.Errorf("operation interrupted by SIGTERM")
+	default:
+		_, err := serverSocket.ReadFull(buffer)
+		if err != nil {
+			return 0, fmt.Errorf("failed to read number of winners: %v", err)
+		}
+	}
+
+	winners_amount := int(buffer[0])
+
+	for i := 0; i < winners_amount; i++ {
+		// Read the winner ID
+		dni_buffer := make([]byte, 4)
+		select {
+		case <-sigChannel:
+			return 0, fmt.Errorf("operation interrupted by signal")
+		default:
+			_, err := serverSocket.ReadFull(dni_buffer)
+			if err != nil {
+				return 0, fmt.Errorf("failed to read winner dni: %v", err)
+			}
+		}
+		winner_dni := binary.BigEndian.Uint32(dni_buffer)
+		log.Debugf("Winner DNI: %d", winner_dni)
+	}
+
+	return winners_amount, nil
 }
