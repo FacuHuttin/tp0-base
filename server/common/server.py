@@ -84,12 +84,20 @@ class Server:
                 raise ValueError("Failed to read bets amount from message")
             bets_amount = int.from_bytes(bytes_bets_amount, byteorder='big')
 
+            if self._shutdown_flag:
+                raise ServerShutdownError("Server is shutting down")
+
+            bytes_agency_id = self.__recv_all_from_socket(client_sock, 1)
+            if not bytes_agency_id:
+                raise ValueError("Failed to read agency_id from message")
+            agency_id = int.from_bytes(bytes_agency_id, byteorder='big')
+
             bets = []
 
             for _ in range(0, bets_amount):
                 if self._shutdown_flag:
                     raise ServerShutdownError("Server is shutting down")
-                bets.append(self.__read_bet_message(client_sock))
+                bets.append(self.__read_bet_message(client_sock, agency_id))
             
             return bets, bets_amount
         except ServerShutdownError:
@@ -98,11 +106,7 @@ class Server:
             logging.error(f'action: apuesta_recibida | result: fail | cantidad: {bets_amount} | error: {e}')
             return [], bets_amount
 
-    def __read_bet_message(self, client_sock):
-        bytes_agency_id = self.__recv_all_from_socket(client_sock, 1)
-        if not bytes_agency_id:
-            raise ValueError("Failed to read agency_id from message")
-        agency_id = int.from_bytes(bytes_agency_id, byteorder='big')
+    def __read_bet_message(self, client_sock, agency_id):
 
         if self._shutdown_flag:
             raise ServerShutdownError("Server is shutting down")

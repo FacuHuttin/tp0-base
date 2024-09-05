@@ -13,9 +13,16 @@ func encode_batch_message(bets []Bet, clientID string) ([]byte, error) {
 	numBets := uint8(len(bets))
 	data = append(data, numBets)
 
+	// Convert Agency ID to byte and encode it
+	agencyIdNum, err := strconv.Atoi(clientID)
+	if err != nil || agencyIdNum < 0 || agencyIdNum > 255 {
+		return nil, fmt.Errorf("invalid agencyId: %v", clientID)
+	}
+	data = append(data, uint8(agencyIdNum))
+
 	// Encode each bet and append to data
 	for _, bet := range bets {
-		encodedBet, err := encode_bet_message(&bet, clientID)
+		encodedBet, err := encode_bet_message(&bet)
 		if err != nil {
 			return nil, fmt.Errorf("failed to encode bet: %v", err)
 		}
@@ -25,15 +32,8 @@ func encode_batch_message(bets []Bet, clientID string) ([]byte, error) {
 	return data, nil
 }
 
-func encode_bet_message(b *Bet, agencyId string) ([]uint8, error) {
+func encode_bet_message(b *Bet) ([]uint8, error) {
 	var data []uint8
-
-	// Convert Agency ID to byte and encode it
-	agencyIdNum, err := strconv.Atoi(agencyId)
-	if err != nil || agencyIdNum < 0 || agencyIdNum > 255 {
-		return nil, fmt.Errorf("invalid agencyId: %v", agencyId)
-	}
-	data = append(data, uint8(agencyIdNum))
 
 	// Encode Name
 	nameLen := uint8(len(b.Name))
