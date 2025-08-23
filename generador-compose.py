@@ -10,6 +10,8 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - LOGGING_LEVEL=DEBUG
+    volumes:
+      - ./server/config.ini:/config.ini
     networks:
       - testing_net
 
@@ -24,6 +26,8 @@ def generate_client_content(client_id):
     environment:
       - CLI_ID={client_id}
       - CLI_LOG_LEVEL=DEBUG
+    volumes:
+      - ./client/config.yaml:/config.yaml
     networks:
       - testing_net
     depends_on:
