@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"net"
+	"os"
 	"time"
 
 	"github.com/op/go-logging"
@@ -51,10 +52,20 @@ func (c *Client) createClientSocket() error {
 }
 
 // StartClientLoop Send messages to the client until some time threshold is met
-func (c *Client) StartClientLoop() {
+func (c *Client) StartClientLoop(signalChan <-chan os.Signal) {
 	// There is an autoincremental msgID to identify every message sent
 	// Messages if the message amount threshold has not been surpassed
 	for msgID := 1; msgID <= c.config.LoopAmount; msgID++ {
+		// Check if signal received (graceful shutdown requested)
+		select {
+		case sig := <-signalChan:
+			log.Infof("action: signal_received | signal: %v | result: stopping_loop | client_id: %v | last_msg_id: %v",
+				sig, c.config.ID, msgID-1)
+			return
+		default:
+			// Continue with normal operation
+		}
+
 		// Create the connection the server in every loop iteration. Send an
 		c.createClientSocket()
 
@@ -82,8 +93,19 @@ func (c *Client) StartClientLoop() {
 		)
 
 		// Wait a time between sending one message and the next one
-		time.Sleep(c.config.LoopPeriod)
-
+		// but also check for signals
+		sleepInterval := 100 * time.Millisecond
+		totalSleep := time.Duration(0)
+		for totalSleep < c.config.LoopPeriod {
+			select {
+			case sig := <-signalChan:
+				log.Infof("action: signal_received | signal: %v | result: stopping_loop | client_id: %v | completed_msg_id: %v",
+					sig, c.config.ID, msgID)
+				return
+			case <-time.After(sleepInterval):
+				totalSleep += sleepInterval
+			}
+		}
 	}
 	log.Infof("action: loop_finished | result: success | client_id: %v", c.config.ID)
 }
