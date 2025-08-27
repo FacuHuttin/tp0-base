@@ -11,12 +11,12 @@ def handle_shutdown(signum, frame):
     shutdown_requested = True
 
 class Server:
-    def __init__(self, port, listen_backlog):
+    def __init__(self, port, listen_backlog, timeout=1.0):
         # Initialize server socket
         self._server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._server_socket.bind(('', port))
         self._server_socket.listen(listen_backlog)
-        self._server_socket.settimeout(1.0)  # Set timeout so accept doesn't block forever
+        self._server_socket.settimeout(timeout)
 
     def run(self):
         """
@@ -35,7 +35,6 @@ class Server:
                 if client_sock:
                     self.__handle_client_connection(client_sock)
             except socket.timeout:
-                # Periodic timeout to check shutdown flag
                 continue
             except OSError as e:
                 if shutdown_requested:
