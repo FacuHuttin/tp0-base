@@ -7,7 +7,7 @@ shutdown_requested = False
 
 def handle_shutdown(signum, frame):
     global shutdown_requested
-    logging.info(f'action: shutdown_signal_received | signal: {signum}')
+    logging.info(f'action: shutdown_signal_received | result: in_progress')
     shutdown_requested = True
 
 class Server:
@@ -39,7 +39,7 @@ class Server:
                 continue
             except OSError as e:
                 if shutdown_requested:
-                    logging.info('action: server_shutdown | reason: signal_received')
+                    logging.info('action: server_shutdown | result: in_progress')
                 else:
                     logging.error(f'action: accept_error | error: {e}')
         self._server_socket.close()

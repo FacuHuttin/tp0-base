@@ -59,8 +59,8 @@ func (c *Client) StartClientLoop(signalChan <-chan os.Signal) {
 		// Check if signal received (graceful shutdown requested)
 		select {
 		case sig := <-signalChan:
-			log.Infof("action: signal_received | signal: %v | result: stopping_loop | client_id: %v | last_msg_id: %v",
-				sig, c.config.ID, msgID-1)
+			log.Infof("action: signal_received | result: success | client_id: %v | last_msg_id: %v | signal: %v",
+				c.config.ID, msgID-1, sig)
 			return
 		default:
 			// Continue with normal operation
@@ -99,8 +99,8 @@ func (c *Client) StartClientLoop(signalChan <-chan os.Signal) {
 		for totalSleep < c.config.LoopPeriod {
 			select {
 			case sig := <-signalChan:
-				log.Infof("action: signal_received | signal: %v | result: stopping_loop | client_id: %v | completed_msg_id: %v",
-					sig, c.config.ID, msgID)
+				log.Infof("action: signal_received | result: success | client_id: %v | completed_msg_id: %v | signal: %v",
+					c.config.ID, msgID, sig)
 				return
 			case <-time.After(sleepInterval):
 				totalSleep += sleepInterval
