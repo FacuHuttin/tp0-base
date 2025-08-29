@@ -2,6 +2,8 @@ import socket
 import logging
 import signal
 
+TIMEOUT = 1.0
+
 # Global shutdown flag
 shutdown_requested = False
 
@@ -11,7 +13,7 @@ def handle_shutdown(signum, frame):
     shutdown_requested = True
 
 class Server:
-    def __init__(self, port, listen_backlog, timeout=1.0):
+    def __init__(self, port, listen_backlog, timeout=TIMEOUT):
         # Initialize server socket
         self._server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._server_socket.bind(('', port))
