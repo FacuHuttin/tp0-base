@@ -17,6 +17,83 @@ services:
     entrypoint: /client
     environment:
       - CLI_ID=1
+      - CLI_NAME=Facundo
+      - CLI_SURNAME=Huttin
+      - CLI_DNI=43746167
+      - CLI_BIRTHDAY=2001-05-22
+      - CLI_BETNUMBER=3942
+    volumes:
+      - ./client/config.yaml:/config.yaml
+    networks:
+      - testing_net
+    depends_on:
+      - server
+
+  client2:
+    container_name: client2
+    image: client:latest
+    entrypoint: /client
+    environment:
+      - CLI_ID=2
+      - CLI_NAME=Carlos Alberto
+      - CLI_SURNAME=Mendoza
+      - CLI_DNI=41582369
+      - CLI_BIRTHDAY=1987-09-14
+      - CLI_BETNUMBER=7825
+    volumes:
+      - ./client/config.yaml:/config.yaml
+    networks:
+      - testing_net
+    depends_on:
+      - server
+
+  client3:
+    container_name: client3
+    image: client:latest
+    entrypoint: /client
+    environment:
+      - CLI_ID=3
+      - CLI_NAME=Elena
+      - CLI_SURNAME=Fernandez
+      - CLI_DNI=38729461
+      - CLI_BIRTHDAY=1983-11-28
+      - CLI_BETNUMBER=9153
+    volumes:
+      - ./client/config.yaml:/config.yaml
+    networks:
+      - testing_net
+    depends_on:
+      - server
+
+  client4:
+    container_name: client4
+    image: client:latest
+    entrypoint: /client
+    environment:
+      - CLI_ID=4
+      - CLI_NAME=Roberto
+      - CLI_SURNAME=Silva
+      - CLI_DNI=25847193
+      - CLI_BIRTHDAY=1994-04-03
+      - CLI_BETNUMBER=6472
+    volumes:
+      - ./client/config.yaml:/config.yaml
+    networks:
+      - testing_net
+    depends_on:
+      - server
+
+  client5:
+    container_name: client5
+    image: client:latest
+    entrypoint: /client
+    environment:
+      - CLI_ID=5
+      - CLI_NAME=Patricia
+      - CLI_SURNAME=Torres
+      - CLI_DNI=52371684
+      - CLI_BIRTHDAY=1991-12-07
+      - CLI_BETNUMBER=3546
     volumes:
       - ./client/config.yaml:/config.yaml
     networks:

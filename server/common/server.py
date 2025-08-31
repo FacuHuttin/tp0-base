@@ -1,6 +1,8 @@
 import socket
 import logging
 import signal
+from .transport import TCPConnection
+from .central import process_communication
 
 TIMEOUT = 1.0
 
@@ -29,8 +31,6 @@ class Server:
         finishes, servers starts to accept new connections again
         """
 
-        # TODO: Modify this program to handle signal to graceful shutdown
-        # the server
         while not shutdown_requested:
             try:
                 client_sock = self.__accept_new_connection()
@@ -46,24 +46,38 @@ class Server:
         self._server_socket.close()
         logging.info('action: server_exit | result: success')
 
-    def __handle_client_connection(self, client_sock):
+    def __handle_client_connection(self, client_sock: socket.socket):
         """
-        Read message from a specific client socket and closes the socket
-
-        If a problem arises in the communication with the client, the
-        client socket will also be closed
+        Creates a connection object and processes communication
+        following the protocol for bet messages and ACK responses
         """
+        connection = None
+        
         try:
-            # TODO: Modify the receive to avoid short-reads
-            msg = client_sock.recv(1024).rstrip().decode('utf-8')
-            addr = client_sock.getpeername()
-            logging.info(f'action: receive_message | result: success | ip: {addr[0]} | msg: {msg}')
-            # TODO: Modify the send to avoid short-writes
-            client_sock.send("{}\n".format(msg).encode('utf-8'))
-        except OSError as e:
-            logging.error("action: receive_message | result: fail | error: {e}")
+            connection = TCPConnection(client_sock)
+            
+            addr = connection.get_address()
+            logging.info(f'action: client_connection_established | result: success | ip: {addr[0]}')
+            
+            success = process_communication(connection)
+            
+            if success:
+                logging.info(f'action: client_communication | result: success | ip: {addr[0]}')
+            else:
+                logging.error(f'action: client_communication | result: fail | ip: {addr[0]}')
+                
+        except Exception as e:
+            addr = client_sock.getpeername() if client_sock else ('unknown', 0)
+            logging.error(f"action: handle_client_connection | result: fail | ip: {addr[0]} | error: {e}")
         finally:
-            client_sock.close()
+            # Clean up connection
+            if connection:
+                connection.close()
+            elif client_sock:
+                try:
+                    client_sock.close()
+                except:
+                    pass
 
     def __accept_new_connection(self):
         """
@@ -72,8 +86,7 @@ class Server:
         Function blocks until a connection to a client is made.
         Then connection created is printed and returned
         """
-
-        # Connection arrived
+        
         try:
             logging.info('action: accept_connections | result: in_progress')
             c, addr = self._server_socket.accept()
