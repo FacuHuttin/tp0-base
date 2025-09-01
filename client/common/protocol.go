@@ -1,8 +1,10 @@
 package common
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -10,9 +12,11 @@ import (
 //
 // Protocol Overview:
 // - All messages start with a message type byte
+// - Agency number is a single byte (1 character)
 // - Fixed fields (DNI, Birthday) have predefined sizes and no length prefix
-// - Variable fields (Name, Surname, BetNumber) have a length byte followed by content
+// - Variable fields (Name, Surname) have a length byte followed by content
 // - Maximum variable field size is 255 bytes
+// - BetNumber is a fixed 4-byte field stored as big endian 32-bit integer
 //
 // Message Types:
 // - MessageTypeBet (1): Client sends bet information to server
@@ -28,22 +32,23 @@ const (
 
 // Common protocol field sizes
 const (
+	MessageTypeSize      = 1
 	AgencyNumberSize     = 1
 	DNISize              = 8
 	BirthdaySize         = 10
+	BetNumberSize        = 4
 	MaxVariableFieldSize = 255
 )
 
 // ACK message protocol constants
 const (
-	// ACK message structure: [type][agency][dni][bet_len][bet_number]
-	AckMinimumSize = AgencyNumberSize + DNISize + 1 // agency + dni + bet_number_length
+	// ACK message structure: [type][agency][dni][bet_number]
+	AckSize = MessageTypeSize + AgencyNumberSize + DNISize + BetNumberSize
 
 	// Byte offsets in ACK message (after message type byte)
-	AckAgencyOffset     = 0
-	AckDNIOffset        = AgencyNumberSize
-	AckBetLengthOffset  = AgencyNumberSize + DNISize
-	AckBetContentOffset = AckMinimumSize
+	AckAgencyOffset    = MessageTypeSize
+	AckDNIOffset       = MessageTypeSize + AgencyNumberSize
+	AckBetNumberOffset = MessageTypeSize + AgencyNumberSize + DNISize
 )
 
 // AckBetMessage represents an acknowledgment message for a bet
@@ -56,7 +61,7 @@ type AckBetMessage struct {
 // Error message constants
 const (
 	ErrInsufficientData = "insufficient data"
-	ErrInvalidBetNumber = "invalid bet number: length cannot be 0"
+	ErrInvalidBetNumber = "invalid bet number: cannot be empty"
 	ErrEmptyBetNumber   = "invalid BetNumber field: cannot be empty"
 )
 
@@ -64,7 +69,8 @@ const (
 // 1st byte: message type (MessageTypeBet)
 // 2nd byte: agency number (same as ID)
 // Fixed length fields (DNI=8 chars, Birthday=10 chars): direct content
-// Variable length fields (Name, Surname, BetNumber): 1 byte length + string content
+// Variable length fields (Name, Surname): 1 byte length + string content
+// BetNumber: 4-byte big endian integer
 func SerializeBetMessage(agencyInfo *AgencyInfo) ([]byte, error) {
 	var result []byte
 	var err error
@@ -88,11 +94,14 @@ func SerializeBetMessage(agencyInfo *AgencyInfo) ([]byte, error) {
 		return nil, err
 	}
 
-	// Serialize BetNumber field (variable, but cannot be empty)
+	// Serialize BetNumber field (4-byte big endian integer)
 	if len(agencyInfo.BetNumber) == 0 {
 		return nil, errors.New(ErrEmptyBetNumber)
 	}
-	result = serializeVariableField(result, agencyInfo.BetNumber)
+	result, err = serializeBetNumberField(result, agencyInfo.BetNumber)
+	if err != nil {
+		return nil, err
+	}
 
 	return result, nil
 }
@@ -101,12 +110,10 @@ func SerializeBetMessage(agencyInfo *AgencyInfo) ([]byte, error) {
 // 1st byte: message type (MessageTypeAck)
 // 2nd byte: agency number
 // Following 8 bytes: DNI
-// 1 byte: bet number length
-// Following bytes: bet number content
+// Following 4 bytes: bet number (big endian 32-bit integer)
 func DeserializeAckBetMessage(data []byte) (*AckBetMessage, error) {
-	minSizeWithType := 1 + AckMinimumSize
-	if len(data) < minSizeWithType {
-		return nil, fmt.Errorf("data too short: need at least %d bytes", minSizeWithType)
+	if len(data) < AckSize {
+		return nil, fmt.Errorf("data too short: need at least %d bytes", AckSize)
 	}
 
 	// Validate message type
@@ -117,67 +124,24 @@ func DeserializeAckBetMessage(data []byte) (*AckBetMessage, error) {
 	ackMsg := &AckBetMessage{}
 
 	// Extract fields using offset constants
-	ackMsg.AgencyNumber = data[1+AckAgencyOffset]
+	ackMsg.AgencyNumber = data[AckAgencyOffset]
 
 	// Extract and clean DNI
-	dniStart := 1 + AckDNIOffset
+	dniStart := AckDNIOffset
 	dniBytes := data[dniStart : dniStart+DNISize]
 	ackMsg.DNI = strings.TrimRight(string(dniBytes), " ")
 
-	// Extract bet number length and validate
-	betLengthOffset := 1 + AckBetLengthOffset
-	betNumberLength := int(data[betLengthOffset])
-	if betNumberLength == 0 {
+	// Extract bet number (4-byte big endian integer)
+	betNumberStart := AckBetNumberOffset
+	betNumberBytes := data[betNumberStart : betNumberStart+BetNumberSize]
+	ackMsg.BetNumber = deserializeBetNumberField(betNumberBytes)
+
+	// Validate bet number is not empty
+	if len(ackMsg.BetNumber) == 0 {
 		return nil, errors.New(ErrInvalidBetNumber)
 	}
 
-	// Validate we have enough data for bet number content
-	betContentOffset := 1 + AckBetContentOffset
-	if len(data) < betContentOffset+betNumberLength {
-		return nil, fmt.Errorf("data too short: need %d bytes for bet number", betNumberLength)
-	}
-
-	// Extract bet number content
-	ackMsg.BetNumber = string(data[betContentOffset : betContentOffset+betNumberLength])
-
 	return ackMsg, nil
-}
-
-// GetMinimumBytes returns the minimum number of bytes needed for an ACK message
-func (ack *AckBetMessage) GetMinimumBytes() int {
-	return 1 + AckMinimumSize // 1 for message type + original minimum size
-}
-
-// GetTotalBytesFromData calculates the total bytes needed based on the initial data
-func GetTotalBytesFromMinData(minData []byte) (int, error) {
-	minSizeWithType := 1 + AckMinimumSize
-	if len(minData) < minSizeWithType {
-		return 0, errors.New(ErrInsufficientData)
-	}
-
-	// Extract bet number length from the specified offset (accounting for message type byte)
-	betLengthOffset := 1 + AckBetLengthOffset
-	betNumberLength := int(minData[betLengthOffset])
-
-	// Total = minimum bytes with type + bet number content length
-	return minSizeWithType + betNumberLength, nil
-}
-
-// GetBetNumberLengthFromData extracts the bet number length from minimum data
-func GetBetNumberLengthFromMinData(minData []byte) (int, error) {
-	minSizeWithType := 1 + AckMinimumSize
-	if len(minData) < minSizeWithType {
-		return 0, errors.New(ErrInsufficientData)
-	}
-
-	// Extract bet number length from the correct offset (accounting for message type byte)
-	betLengthOffset := 1 + AckBetLengthOffset
-	betNumberLength := int(minData[betLengthOffset])
-	if betNumberLength == 0 {
-		return 0, errors.New(ErrInvalidBetNumber)
-	}
-
-	return betNumberLength, nil
 }
 
 // CreateCloseMessage creates a close message to gracefully shutdown the connection
@@ -187,40 +151,14 @@ func CreateCloseMessage() []byte {
 
 // ReceiveAckMessage handles the protocol for receiving ACK messages from the server
 func ReceiveAckMessage(connection Connection) (*AckBetMessage, error) {
-	// Create a temporary AckBetMessage to get protocol information
-	tempAck := &AckBetMessage{}
-	minBytes := tempAck.GetMinimumBytes()
 
-	// Read the minimum required bytes
-	minData, err := connection.ReceiveExactBytes(minBytes)
+	data, err := connection.ReceiveExactBytes(AckSize)
 	if err != nil {
-		return nil, fmt.Errorf("error reading initial ACK data: %v", err)
+		return nil, fmt.Errorf("error reading ACK data: %v", err)
 	}
-
-	// Get bet number length from the data
-	betNumberLength, err := GetBetNumberLengthFromMinData(minData)
-	if err != nil {
-		return nil, fmt.Errorf("error extracting bet number length: %v", err)
-	}
-
-	// Read the bet number content (bet number length is guaranteed to be > 0)
-	betData, err := connection.ReceiveExactBytes(betNumberLength)
-	if err != nil {
-		return nil, fmt.Errorf("error reading bet number data: %v", err)
-	}
-
-	// Combine all data
-	totalBytes, err := GetTotalBytesFromMinData(minData)
-	if err != nil {
-		return nil, fmt.Errorf("error calculating total bytes: %v", err)
-	}
-
-	fullData := make([]byte, totalBytes)
-	copy(fullData, minData)
-	copy(fullData[minBytes:], betData)
 
 	// Deserialize the complete ACK message
-	return DeserializeAckBetMessage(fullData)
+	return DeserializeAckBetMessage(data)
 }
 
 // SendBetMessage handles the protocol for sending bet messages to the server
@@ -232,6 +170,35 @@ func SendBetMessage(connection Connection, message *Message) error {
 func SendCloseMessage(connection Connection) error {
 	closeMessage := CreateCloseMessage()
 	return connection.Send(closeMessage)
+}
+
+// serializeBetNumberField converts a bet number string to 4-byte big endian format
+func serializeBetNumberField(result []byte, betNumber string) ([]byte, error) {
+	// Convert string to integer
+	betInt, err := strconv.ParseUint(betNumber, 10, 32)
+	if err != nil {
+		return nil, fmt.Errorf("invalid bet number: %s is not a valid integer", betNumber)
+	}
+
+	// Convert to 4-byte big endian
+	betBytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(betBytes, uint32(betInt))
+	result = append(result, betBytes...)
+
+	return result, nil
+}
+
+// deserializeBetNumberField converts 4-byte big endian format to bet number string
+func deserializeBetNumberField(betBytes []byte) string {
+	if len(betBytes) != 4 {
+		return ""
+	}
+
+	// Convert from 4-byte big endian to integer
+	betInt := binary.BigEndian.Uint32(betBytes)
+
+	// Convert to string
+	return strconv.FormatUint(uint64(betInt), 10)
 }
 
 // Helper functions for common operations
@@ -272,7 +239,9 @@ func validateMessageType(data []byte, expectedType byte) error {
 // extractAgencyNumber safely extracts agency number from AgencyInfo ID
 func extractAgencyNumber(id string) byte {
 	if len(id) > 0 {
-		return id[0]
+		if agencyNum, err := strconv.ParseUint(id, 10, 8); err == nil {
+			return byte(agencyNum)
+		}
 	}
-	return '0' // Default fallback
+	return 0 // Default fallback
 }
