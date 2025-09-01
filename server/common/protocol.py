@@ -7,7 +7,8 @@ for communication between client and server.
 Protocol Overview:
 - All messages start with a message type byte
 - Fixed fields (DNI, Birthday) have predefined sizes and no length prefix
-- Variable fields (Name, Surname, BetNumber) have a length byte followed by content
+- Variable fields (Name, Surname) have a length byte followed by content
+- BetNumber is a fixed 4-byte field stored as big endian 32-bit integer
 - Maximum variable field size is 255 bytes
 
 Message Types:
@@ -26,23 +27,16 @@ MESSAGE_TYPE_ACK = 2
 MESSAGE_TYPE_CLOSE = 3
 
 # Common protocol field sizes
+MESSAGE_TYPE_SIZE = 1
 AGENCY_NUMBER_SIZE = 1
 DNI_SIZE = 8
 BIRTHDAY_SIZE = 10
+BET_NUMBER_SIZE = 4
 MAX_VARIABLE_FIELD_SIZE = 255
-
-# ACK message protocol constants
-ACK_MINIMUM_SIZE = AGENCY_NUMBER_SIZE + DNI_SIZE + 1  # agency + dni + bet_number_length
-
-# Byte offsets in ACK message (after message type byte)
-ACK_AGENCY_OFFSET = 0
-ACK_DNI_OFFSET = AGENCY_NUMBER_SIZE
-ACK_BET_LENGTH_OFFSET = AGENCY_NUMBER_SIZE + DNI_SIZE
-ACK_BET_CONTENT_OFFSET = ACK_MINIMUM_SIZE
 
 # Error message constants
 ERR_INSUFFICIENT_DATA = "insufficient data"
-ERR_INVALID_BET_NUMBER = "invalid bet number: length cannot be 0"
+ERR_INVALID_BET_NUMBER = "invalid bet number: cannot be empty"
 ERR_EMPTY_BET_NUMBER = "invalid BetNumber field: cannot be empty"
 
 
@@ -60,8 +54,7 @@ class AckBetMessage:
         1st byte: message type (MESSAGE_TYPE_ACK)
         2nd byte: agency number
         Following 8 bytes: DNI (padded with spaces if shorter)
-        1 byte: bet number length
-        Following bytes: bet number content
+        Following 4 bytes: bet number (big endian 32-bit integer)
         """
         if not self.bet_number or len(self.bet_number) == 0:
             raise ValueError(ERR_EMPTY_BET_NUMBER)
@@ -72,19 +65,22 @@ class AckBetMessage:
         result.append(MESSAGE_TYPE_ACK)
         
         # Add agency number as second byte
-        result.append(ord(self.agency_number[0]))
+        try:
+            agency_num = int(self.agency_number)
+            if 0 <= agency_num <= 255:
+                result.append(agency_num)
+            else:
+                result.append(0)  # Default fallback for out of range
+        except ValueError:
+            result.append(0)  # Default fallback for invalid number
         
-        # Add DNI as fixed 8 bytes (always exactly DNI_SIZE bytes)
-        dni_bytes = self.dni.encode('utf-8').ljust(DNI_SIZE)
+        # Add DNI as fixed 8 bytes
+        dni_bytes = serialize_fixed_field(self.dni, DNI_SIZE, "DNI")
         result.extend(dni_bytes)
         
-        # Add bet number: length byte + content
-        bet_bytes = self.bet_number.encode('utf-8')
-        if len(bet_bytes) > MAX_VARIABLE_FIELD_SIZE:
-            bet_bytes = bet_bytes[:MAX_VARIABLE_FIELD_SIZE]
-        
-        result.append(len(bet_bytes))  # Length byte
-        result.extend(bet_bytes)       # Content
+        # Add bet number as 4-byte big endian integer
+        bet_number_bytes = serialize_bet_number_field(self.bet_number)
+        result.extend(bet_number_bytes)
         
         return bytes(result)
 
@@ -120,10 +116,17 @@ def validate_message_type(data: bytes, expected_type: int) -> None:
 def deserialize_bet_message(data: bytes) -> Bet:
     """
     Deserializes bet message according to the protocol:
+
     1st byte: message type (MESSAGE_TYPE_BET)
+
     2nd byte: agency number
-    Variable length fields (Name, Surname, BetNumber): 1 byte length + string content
+
+    Variable length fields (Name, Surname): 1 byte length + string content
+
     Fixed length fields (DNI=8 chars, Birthday=10 chars): direct content
+
+    BetNumber: 4-byte big endian unsigned integer
+    
     Returns a Bet object from utils.py
     """
     if len(data) < 2:
@@ -136,7 +139,7 @@ def deserialize_bet_message(data: bytes) -> Bet:
     pos += 1
     
     # Extract agency number (second byte)
-    agency_number = chr(data[pos])
+    agency_number = data[pos]
     pos += 1
     
     # Deserialize Name field: length byte + content
@@ -171,17 +174,12 @@ def deserialize_bet_message(data: bytes) -> Bet:
     birthdate = data[pos:pos + BIRTHDAY_SIZE].decode('utf-8').rstrip()
     pos += BIRTHDAY_SIZE
     
-    # Deserialize BetNumber field: length byte + content
-    if pos >= len(data):
-        raise ValueError("data too short: missing length for BetNumber field")
-    bet_length = data[pos]
-    pos += 1
-    if bet_length == 0:
-        raise ValueError(ERR_INVALID_BET_NUMBER)
-    if pos + bet_length > len(data):
-        raise ValueError("data too short: missing content for BetNumber field")
-    number = data[pos:pos + bet_length].decode('utf-8')
-    pos += bet_length
+    # Deserialize BetNumber field: fixed 4-byte big endian integer
+    if pos + BET_NUMBER_SIZE > len(data):
+        raise ValueError(f"data too short: missing BetNumber field ({BET_NUMBER_SIZE} bytes)")
+    bet_number_bytes = data[pos:pos + BET_NUMBER_SIZE]
+    number = deserialize_bet_number_field(bet_number_bytes)
+    pos += BET_NUMBER_SIZE
     
     # Create and return Bet object using the constructor from utils.py
     return Bet(
@@ -251,12 +249,8 @@ def receive_bet_message_from_connection(connection: TCPConnection) -> bytes:
         # Read fixed Birthday
         birthday_data = connection.receive_exact_bytes(BIRTHDAY_SIZE)
         
-        # Read bet number length and bet number content
-        bet_length_data = connection.receive_exact_bytes(1)
-        bet_length = bet_length_data[0]
-        if bet_length == 0:
-            raise ValueError(ERR_INVALID_BET_NUMBER)
-        bet_data = connection.receive_exact_bytes(bet_length)
+        # Read bet number as fixed 4-byte big endian integer
+        bet_data = connection.receive_exact_bytes(BET_NUMBER_SIZE)
         
         # Combine all data according to protocol (including message type)
         full_message = (message_type_data + agency_data + 
@@ -264,7 +258,7 @@ def receive_bet_message_from_connection(connection: TCPConnection) -> bytes:
                        surname_length_data + surname_data +
                        dni_data + 
                        birthday_data + 
-                       bet_length_data + bet_data)
+                       bet_data)
         
         logging.info(f"action: bet_message_received | result: success | total_bytes: {len(full_message)}")
         return full_message
@@ -290,3 +284,23 @@ def send_ack_message_to_connection(connection: TCPConnection, ack_data: bytes) -
 def create_close_message() -> bytes:
     """Creates a close message to gracefully shutdown the connection"""
     return bytes([MESSAGE_TYPE_CLOSE])
+
+
+def serialize_bet_number_field(bet_number: str) -> bytes:
+    """Converts a bet number string to 4-byte big endian format"""
+    try:
+        bet_int = int(bet_number)
+        if bet_int < 0 or bet_int > 0xFFFFFFFF:
+            raise ValueError(f"bet number {bet_number} is out of range for 32-bit integer")
+        return bet_int.to_bytes(4, byteorder='big')
+    except ValueError as e:
+        raise ValueError(f"invalid bet number: {bet_number} is not a valid integer") from e
+
+
+def deserialize_bet_number_field(bet_bytes: bytes) -> str:
+    """Converts 4-byte big endian format to bet number string"""
+    if len(bet_bytes) != 4:
+        raise ValueError(f"bet number field must be exactly 4 bytes, got {len(bet_bytes)}")
+    
+    bet_int = int.from_bytes(bet_bytes, byteorder='big')
+    return str(bet_int)
