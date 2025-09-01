@@ -10,6 +10,7 @@ import (
 //
 // Protocol Overview:
 // - All messages start with a message type byte
+// - Agency number is a single byte (1 character)
 // - Fixed fields (DNI, Birthday) have predefined sizes and no length prefix
 // - Variable fields (Name, Surname, BetNumber) have a length byte followed by content
 // - Maximum variable field size is 255 bytes

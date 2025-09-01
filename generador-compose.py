@@ -45,6 +45,7 @@ def generate_client_content(client_id):
       - CLI_BETNUMBER={bet_number}
     volumes:
       - ./client/config.yaml:/config.yaml
+      - ./client/data/agency-{client_id}.csv:/agency.csv
     networks:
       - testing_net
     depends_on:
