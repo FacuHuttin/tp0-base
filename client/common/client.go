@@ -2,7 +2,6 @@ package common
 
 import (
 	"fmt"
-	"math"
 	"os"
 	"time"
 
@@ -84,16 +83,6 @@ func (c *Client) StartClientLoop(signalChan <-chan os.Signal) int {
 	// Close connection after successful communication
 	c.service.connection.Close()
 
-	// Check for signal after communication but before sleep
-	select {
-	case sig := <-signalChan:
-		log.Infof("action: signal_received | result: success | client_id: %v | signal: %v",
-			c.config.ID, sig)
-		return 0 // Graceful shutdown
-	default:
-		// Continue to sleep
-	}
-
 	log.Infof("action: loop_finished | result: success | client_id: %v", c.config.ID)
 	return 0 // Normal exit
 }
@@ -114,7 +103,7 @@ func (c *Client) sleepWithSignalCheck(signalChan <-chan os.Signal, sleepPeriod t
 	return false // No signal received
 }
 
-// connectWithBackoff attempts to connect with exponential backoff
+// connectWithBackoff attempts to connect with fixed timeout and incremental backoff sleep
 func (c *Client) connectWithBackoff(signalChan <-chan os.Signal) error {
 	baseBackoff := c.config.BaseBackoff
 	if baseBackoff == 0 {
@@ -126,26 +115,45 @@ func (c *Client) connectWithBackoff(signalChan <-chan os.Signal) error {
 		maxRetries = 5 // Default max retries
 	}
 
+	// Fixed timeout for connection attempts
+	connectionTimeout := baseBackoff * 5 // Use 5x baseBackoff as fixed timeout
+
 	for attempt := 0; attempt <= maxRetries; attempt++ {
-		// Try to connect
-		err := c.service.connection.Connect()
+		log.Infof("action: connect_attempt | result: in_progress | client_id: %v | attempt: %v | timeout: %v",
+			c.config.ID, attempt+1, connectionTimeout)
+
+		// Try to connect with fixed timeout
+		err := c.service.connection.ConnectWithTimeout(connectionTimeout)
 		if err == nil {
+			select {
+			case sig := <-signalChan:
+				log.Infof("action: signal_received | result: success | client_id: %v | signal: %v",
+					c.config.ID, sig)
+				return fmt.Errorf("client interrupted during backoff")
+			default:
+				// Continue with normal operation
+			}
+			log.Infof("action: connect | result: success | client_id: %v | attempt: %v",
+				c.config.ID, attempt+1)
 			return nil // Success
 		}
+
+		log.Infof("action: connect_attempt | result: fail | client_id: %v | attempt: %v | error: %v",
+			c.config.ID, attempt+1, err)
 
 		// If this was the last attempt, return the error
 		if attempt == maxRetries {
 			return err
 		}
 
-		// Calculate backoff duration: base * 2^attempt
-		backoffDuration := time.Duration(float64(baseBackoff) * math.Pow(2, float64(attempt)))
+		// Calculate incremental sleep duration: baseBackoff * (attempt + 1)
+		sleepDuration := baseBackoff * time.Duration(attempt+1)
 
-		log.Infof("action: connect_retry | result: scheduled | client_id: %v | attempt: %v | backoff: %v",
-			c.config.ID, attempt+1, backoffDuration)
+		log.Infof("action: connect_retry | result: scheduled | client_id: %v | attempt: %v | sleep: %v",
+			c.config.ID, attempt+1, sleepDuration)
 
-		// Wait with exponential backoff
-		if c.sleepWithSignalCheck(signalChan, backoffDuration) {
+		// Wait with incremental sleep
+		if c.sleepWithSignalCheck(signalChan, sleepDuration) {
 			return fmt.Errorf("client interrupted during backoff")
 		}
 	}

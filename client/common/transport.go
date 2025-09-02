@@ -2,10 +2,12 @@ package common
 
 import (
 	"net"
+	"time"
 )
 
 type Connection interface {
 	Connect() error
+	ConnectWithTimeout(timeout time.Duration) error
 	ReceiveExactBytes(count int) ([]byte, error)
 	Send(message []byte) error
 	Close() error
@@ -25,6 +27,18 @@ func (t *TCPConnection) Connect() error {
 		return nil // Already connected
 	}
 	conn, err := net.Dial("tcp", t.address)
+	if err != nil {
+		return err
+	}
+	t.conn = conn
+	return nil
+}
+
+func (t *TCPConnection) ConnectWithTimeout(timeout time.Duration) error {
+	if t.conn != nil {
+		return nil // Already connected
+	}
+	conn, err := net.DialTimeout("tcp", t.address, timeout)
 	if err != nil {
 		return err
 	}

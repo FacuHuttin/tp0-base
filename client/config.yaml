@@ -7,7 +7,7 @@ loop:
 log:
   level: "INFO"
 batch:
-  maxAmount: 15
+  maxAmount: 128
 bets:
   agencyFile: "agency.csv"
 retry:

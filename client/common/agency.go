@@ -128,6 +128,9 @@ func (cs *AgencyService) ProcessCommunication(signalChan <-chan os.Signal) error
 		case <-signalChan:
 			log.Infof("action: signal_received | result: stopping | client_id: %v | batch: %d",
 				cs.agencyInfo.ID, batchIndex)
+			if err := cs.SendCloseMessage(); err != nil {
+				return fmt.Errorf("error sending close message: %v", err)
+			}
 			return fmt.Errorf("client interrupted")
 		default:
 		}

@@ -42,7 +42,7 @@ Following bytes: n times (name + surname + DNI + birthday + bet number)
 
 import logging
 from .utils import Bet
-from .transport import TCPConnection
+from .transport import TCPConnection, ShutdownRequestedError
 
 # Protocol message types (matching the client constants)
 MESSAGE_TYPE_BET = 1
@@ -63,7 +63,6 @@ MAX_VARIABLE_FIELD_SIZE = 255
 ERR_INSUFFICIENT_DATA = "insufficient data"
 ERR_INVALID_BET_NUMBER = "invalid bet number: cannot be empty"
 ERR_EMPTY_BET_NUMBER = "invalid BetNumber field: cannot be empty"
-
 
 class AckBetMessage:
     """Represents an acknowledgment message for a batch of bets"""
@@ -215,13 +214,22 @@ def create_batch_ack_message(agency_number: int, batch_number: int) -> AckBetMes
     )
 
 
-def receive_message_type(connection: TCPConnection) -> int:
+def receive_message_type(connection: TCPConnection, server=None) -> int:
     """
     Receives and returns the message type from the connection
     """
     try:
+        if server and server.shutdown_requested:
+            raise ShutdownRequestedError("Shutdown requested")
+            
         message_type_data = connection.receive_exact_bytes(1)
         return message_type_data[0]
+    except ShutdownRequestedError as e:
+        logging.info(f"action: receive_message_type | result: shutdown | info: {e}")
+        raise
+    except ConnectionError as e:
+        logging.error(f"action: receive_message_type | result: fail | error: {e}")
+        raise
     except Exception as e:
         logging.error(f"action: receive_message_type | result: fail | error: {e}")
         raise
@@ -288,11 +296,6 @@ def send_ack_message_to_connection(connection: TCPConnection, ack_data: bytes) -
     except Exception as e:
         logging.error(f"action: send_ack_message_to_connection | result: fail | error: {e}")
         raise
-
-
-def create_close_message() -> bytes:
-    """Creates a close message to gracefully shutdown the connection"""
-    return bytes([MESSAGE_TYPE_CLOSE])
 
 
 def serialize_bet_number_field(bet_number: str) -> bytes:
@@ -408,13 +411,16 @@ def deserialize_batch_bet_message(data: bytes) -> tuple[int, list[Bet]]:
     return batch_number, bets
 
 
-def receive_batch_bet_message_from_connection(connection: TCPConnection, message_type: int = None) -> bytes:
+def receive_batch_bet_message_from_connection(connection: TCPConnection, message_type: int = None, server=None) -> bytes:
     """
     Receives a batch bet message from connection using protocol knowledge.
     If message_type is provided, it means the message type was already read.
     Returns the complete message data as bytes including the message type.
     """
     try:
+        if server and server.shutdown_requested:
+            raise ShutdownRequestedError("Shutdown requested")
+        
         if message_type is None:
             # Read the message type (1 byte)
             message_type_data = connection.receive_exact_bytes(1)
@@ -441,6 +447,9 @@ def receive_batch_bet_message_from_connection(connection: TCPConnection, message
         remaining_data = bytearray()
         
         for i in range(bets_count):
+            if server and server.shutdown_requested:
+                raise ShutdownRequestedError("Shutdown requested")
+                
             # Read name length and content
             name_length_data = connection.receive_exact_bytes(1)
             name_length = name_length_data[0]
@@ -470,6 +479,12 @@ def receive_batch_bet_message_from_connection(connection: TCPConnection, message
         full_message = (message_type_data + agency_data + batch_data + bets_count_data + bytes(remaining_data))
         return full_message
         
+    except ShutdownRequestedError as e:
+        logging.info(f"action: receive_batch_bet_message_from_connection | result: shutdown | info: {e}")
+        raise
+    except ConnectionError as e:
+        logging.error(f"action: receive_batch_bet_message_from_connection | result: fail | error: {e}")
+        raise
     except Exception as e:
         logging.error(f"action: receive_batch_bet_message_from_connection | result: fail | error: {e}")
         raise

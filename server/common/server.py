@@ -6,14 +6,6 @@ from .central import process_communication
 
 TIMEOUT = 1.0
 
-# Global shutdown flag
-shutdown_requested = False
-
-def handle_shutdown(signum, frame):
-    global shutdown_requested
-    logging.info(f'action: shutdown_signal_received | result: in_progress')
-    shutdown_requested = True
-
 class Server:
     def __init__(self, port, listen_backlog, timeout=TIMEOUT):
         # Initialize server socket
@@ -21,6 +13,16 @@ class Server:
         self._server_socket.bind(('', port))
         self._server_socket.listen(listen_backlog)
         self._server_socket.settimeout(timeout)
+        # Instance-based shutdown flag
+        self.shutdown_requested = False
+        
+        # Register signal handlers
+        signal.signal(signal.SIGTERM, self._handle_shutdown)
+    
+    def _handle_shutdown(self, signum, frame):
+        """Handle shutdown signal"""
+        logging.info(f'action: shutdown_signal_received | result: in_progress')
+        self.shutdown_requested = True
 
     def run(self):
         """
@@ -31,15 +33,18 @@ class Server:
         finishes, servers starts to accept new connections again
         """
 
-        while not shutdown_requested:
+        while not self.shutdown_requested:
             try:
                 client_sock = self.__accept_new_connection()
+                if self.shutdown_requested:
+                    logging.info('action: server_shutdown | result: in_progress')
+                    break
                 if client_sock:
                     self.__handle_client_connection(client_sock)
             except socket.timeout:
                 continue
             except OSError as e:
-                if shutdown_requested:
+                if self.shutdown_requested:
                     logging.info('action: server_shutdown | result: in_progress')
                 else:
                     logging.error(f'action: accept_error | error: {e}')
@@ -54,21 +59,32 @@ class Server:
         connection = None
         
         try:
-            connection = TCPConnection(client_sock)
+            # Check if shutdown was requested before starting
+            if self.shutdown_requested:
+                logging.info('action: client_connection_skipped | result: shutdown_requested')
+                return
+                
+            connection = TCPConnection(client_sock, self)
             
             addr = connection.get_address()
             logging.info(f'action: client_connection_established | result: success | ip: {addr[0]}')
             
-            success = process_communication(connection)
+            success = process_communication(connection, self)
             
             if success:
                 logging.info(f'action: client_communication | result: success | ip: {addr[0]}')
             else:
-                logging.error(f'action: client_communication | result: fail | ip: {addr[0]}')
+                if self.shutdown_requested:
+                    logging.info(f'action: client_communication | result: shutdown | ip: {addr[0]}')
+                else:
+                    logging.error(f'action: client_communication | result: fail | ip: {addr[0]}')
                 
         except Exception as e:
             addr = client_sock.getpeername() if client_sock else ('unknown', 0)
-            logging.error(f"action: handle_client_connection | result: fail | ip: {addr[0]} | error: {e}")
+            if self.shutdown_requested:
+                logging.info(f"action: handle_client_connection | result: shutdown | ip: {addr[0]} | info: {e}")
+            else:
+                logging.error(f"action: handle_client_connection | result: fail | ip: {addr[0]} | error: {e}")
         finally:
             # Clean up connection
             if connection:
@@ -95,9 +111,6 @@ class Server:
         except socket.timeout:
             return None
         except OSError:
-            if shutdown_requested:
+            if self.shutdown_requested:
                 return None
             raise
-
-# Register signal handler
-signal.signal(signal.SIGTERM, handle_shutdown)

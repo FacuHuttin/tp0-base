@@ -1,7 +1,7 @@
 import logging
 
 from .utils import Bet, store_bets
-from .transport import TCPConnection
+from .transport import TCPConnection, ShutdownRequestedError
 from .protocol import (
     MESSAGE_TYPE_BET, MESSAGE_TYPE_ACK, MESSAGE_TYPE_CLOSE,
     AGENCY_NUMBER_SIZE, DNI_SIZE, BIRTHDAY_SIZE, BET_NUMBER_SIZE,
@@ -35,7 +35,7 @@ def process_batch_bet_message(data: bytes):
         logging.error(f"action: apuesta_recibida | result: fail | cantidad: {len(bets)} | error: {e}")
         raise
 
-def process_communication(connection: TCPConnection):
+def process_communication(connection: TCPConnection, server=None):
     """
     Handles the communication protocol for batch betting:
     1. Receive batch bet message -> send ACK -> repeat until close message
@@ -44,13 +44,17 @@ def process_communication(connection: TCPConnection):
     """
     try:
         while True:
+            if server and server.shutdown_requested:
+                logging.info("action: process_communication | result: shutdown_requested")
+                return True
+            
             # Receive message type first
-            message_type = receive_message_type(connection)
+            message_type = receive_message_type(connection, server)
             
             if message_type == MESSAGE_TYPE_BET:
                 # Receive the complete batch bet message using protocol function
                 # Pass the message_type since we already read it
-                bet_message_data = receive_batch_bet_message_from_connection(connection, message_type)
+                bet_message_data = receive_batch_bet_message_from_connection(connection, message_type, server)
                 
                 # Process the batch bet message and get ACK response
                 ack_data = process_batch_bet_message(bet_message_data)
@@ -65,6 +69,12 @@ def process_communication(connection: TCPConnection):
                 logging.error(f"action: unexpected_message_type | result: fail | type: {message_type}")
                 return False
         
+    except ShutdownRequestedError as e:
+        logging.info(f"action: process_communication | result: shutdown | info: {e}")
+        return True
+    except ConnectionError as e:
+        logging.error(f"action: process_communication | result: fail | error: {e}")
+        return False
     except Exception as e:
         logging.error(f"action: process_communication | result: fail | error: {e}")
         return False
