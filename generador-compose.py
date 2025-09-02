@@ -26,7 +26,7 @@ def generate_client_content(client_id):
     environment:
       - CLI_ID={client_id}
       - CLI_BETFILE=/agency.csv
-      - CLI_MAXRETRIES=5
+      - CLI_MAXRETRIES=10
       - CLI_BASEBACKOFF=100ms
     volumes:
       - ./client/config.yaml:/config.yaml
