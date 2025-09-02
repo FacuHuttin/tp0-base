@@ -5,13 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
-	"strings"
 )
 
 // Package common provides protocol definitions and message handling for the betting system.
 //
 // Protocol Overview:
 // - All messages start with a message type byte
+// - For batch bet messages: agency number, batch number, bets count, then bet data
 // - Agency number is a single byte (1 character)
 // - Fixed fields (DNI, Birthday) have predefined sizes and no length prefix
 // - Variable fields (Name, Surname) have a length byte followed by content
@@ -19,9 +19,21 @@ import (
 // - BetNumber is a fixed 4-byte field stored as big endian 32-bit integer
 //
 // Message Types:
-// - MessageTypeBet (1): Client sends bet information to server
-// - MessageTypeAck (2): Server acknowledges bet sent
+// - MessageTypeBet (1): Client sends bet information to server (now supports batches)
+// - MessageTypeAck (2): Server acknowledges batch of bets sent (type + agency + batch number)
 // - MessageTypeClose (3): Graceful connection shutdown
+//
+// Batch Bet Message Format:
+// 1st byte: message type (MessageTypeBet)
+// 2nd byte: agency number
+// 3rd-6th bytes: batch number (4-byte big endian integer)
+// 7th byte: number of bets (n)
+// Following bytes: n times (name + surname + DNI + birthday + bet number)
+//
+// ACK Message Format:
+// 1st byte: message type (MessageTypeAck)
+// 2nd byte: agency number
+// 3rd-6th bytes: batch number (4-byte big endian integer)
 
 // Protocol message types
 const (
@@ -34,6 +46,8 @@ const (
 const (
 	MessageTypeSize      = 1
 	AgencyNumberSize     = 1
+	BatchNumberSize      = 4
+	BetsCountSize        = 1
 	DNISize              = 8
 	BirthdaySize         = 10
 	BetNumberSize        = 4
@@ -42,20 +56,18 @@ const (
 
 // ACK message protocol constants
 const (
-	// ACK message structure: [type][agency][dni][bet_number]
-	AckSize = MessageTypeSize + AgencyNumberSize + DNISize + BetNumberSize
+	// ACK message structure: [type][agency][batch_number]
+	AckSize = MessageTypeSize + AgencyNumberSize + BatchNumberSize
 
 	// Byte offsets in ACK message (after message type byte)
-	AckAgencyOffset    = MessageTypeSize
-	AckDNIOffset       = MessageTypeSize + AgencyNumberSize
-	AckBetNumberOffset = MessageTypeSize + AgencyNumberSize + DNISize
+	AckAgencyOffset      = MessageTypeSize
+	AckBatchNumberOffset = MessageTypeSize + AgencyNumberSize
 )
 
-// AckBetMessage represents an acknowledgment message for a bet
+// AckBetMessage represents an acknowledgment message for a batch of bets
 type AckBetMessage struct {
 	AgencyNumber byte
-	DNI          string
-	BetNumber    string
+	BatchNumber  uint32 // Changed to uint32 for 4-byte batch number
 }
 
 // Error message constants
@@ -65,52 +77,10 @@ const (
 	ErrEmptyBetNumber   = "invalid BetNumber field: cannot be empty"
 )
 
-// SerializeBetMessage converts AgencyInfo to bytes according to the protocol:
-// 1st byte: message type (MessageTypeBet)
-// 2nd byte: agency number (same as ID)
-// Fixed length fields (DNI=8 chars, Birthday=10 chars): direct content
-// Variable length fields (Name, Surname): 1 byte length + string content
-// BetNumber: 4-byte big endian integer
-func SerializeBetMessage(agencyInfo *AgencyInfo) ([]byte, error) {
-	var result []byte
-	var err error
-
-	// Add message type and agency number
-	result = append(result, MessageTypeBet)
-	result = append(result, extractAgencyNumber(agencyInfo.ID))
-
-	// Serialize variable fields
-	result = serializeVariableField(result, agencyInfo.Name)
-	result = serializeVariableField(result, agencyInfo.Surname)
-
-	// Serialize fixed fields
-	result, err = serializeFixedField(result, agencyInfo.DNI, DNISize, "DNI")
-	if err != nil {
-		return nil, err
-	}
-
-	result, err = serializeFixedField(result, agencyInfo.Birthday, BirthdaySize, "Birthday")
-	if err != nil {
-		return nil, err
-	}
-
-	// Serialize BetNumber field (4-byte big endian integer)
-	if len(agencyInfo.BetNumber) == 0 {
-		return nil, errors.New(ErrEmptyBetNumber)
-	}
-	result, err = serializeBetNumberField(result, agencyInfo.BetNumber)
-	if err != nil {
-		return nil, err
-	}
-
-	return result, nil
-}
-
 // DeserializeAckBetMessage deserializes ACK bet message according to the protocol:
 // 1st byte: message type (MessageTypeAck)
 // 2nd byte: agency number
-// Following 8 bytes: DNI
-// Following 4 bytes: bet number (big endian 32-bit integer)
+// 3rd-6th bytes: batch number (4-byte big endian integer)
 func DeserializeAckBetMessage(data []byte) (*AckBetMessage, error) {
 	if len(data) < AckSize {
 		return nil, fmt.Errorf("data too short: need at least %d bytes", AckSize)
@@ -126,20 +96,9 @@ func DeserializeAckBetMessage(data []byte) (*AckBetMessage, error) {
 	// Extract fields using offset constants
 	ackMsg.AgencyNumber = data[AckAgencyOffset]
 
-	// Extract and clean DNI
-	dniStart := AckDNIOffset
-	dniBytes := data[dniStart : dniStart+DNISize]
-	ackMsg.DNI = strings.TrimRight(string(dniBytes), " ")
-
-	// Extract bet number (4-byte big endian integer)
-	betNumberStart := AckBetNumberOffset
-	betNumberBytes := data[betNumberStart : betNumberStart+BetNumberSize]
-	ackMsg.BetNumber = deserializeBetNumberField(betNumberBytes)
-
-	// Validate bet number is not empty
-	if len(ackMsg.BetNumber) == 0 {
-		return nil, errors.New(ErrInvalidBetNumber)
-	}
+	// Extract 4-byte batch number (big endian)
+	batchNumberBytes := data[AckBatchNumberOffset : AckBatchNumberOffset+BatchNumberSize]
+	ackMsg.BatchNumber = binary.BigEndian.Uint32(batchNumberBytes)
 
 	return ackMsg, nil
 }
@@ -172,6 +131,15 @@ func SendCloseMessage(connection Connection) error {
 	return connection.Send(closeMessage)
 }
 
+// SendBatchBetMessage handles the protocol for sending batch bet messages to the server
+func SendBatchBetMessage(connection Connection, agencyNumber string, batchNumber int, bets []Bet) error {
+	batchMessage, err := SerializeBatchBetMessage(agencyNumber, batchNumber, bets)
+	if err != nil {
+		return fmt.Errorf("error serializing batch bet message: %v", err)
+	}
+	return connection.Send(batchMessage)
+}
+
 // serializeBetNumberField converts a bet number string to 4-byte big endian format
 func serializeBetNumberField(result []byte, betNumber string) ([]byte, error) {
 	// Convert string to integer
@@ -186,19 +154,6 @@ func serializeBetNumberField(result []byte, betNumber string) ([]byte, error) {
 	result = append(result, betBytes...)
 
 	return result, nil
-}
-
-// deserializeBetNumberField converts 4-byte big endian format to bet number string
-func deserializeBetNumberField(betBytes []byte) string {
-	if len(betBytes) != 4 {
-		return ""
-	}
-
-	// Convert from 4-byte big endian to integer
-	betInt := binary.BigEndian.Uint32(betBytes)
-
-	// Convert to string
-	return strconv.FormatUint(uint64(betInt), 10)
 }
 
 // Helper functions for common operations
@@ -244,4 +199,66 @@ func extractAgencyNumber(id string) byte {
 		}
 	}
 	return 0 // Default fallback
+}
+
+// SerializeBatchBetMessage converts a batch of bets to bytes according to the new protocol:
+// 1st byte: message type (MessageTypeBet)
+// 2nd byte: agency number
+// 3rd byte: batch number
+// 4th byte: number of bets (n)
+// Following bytes: n times (name + surname + DNI + birthday + bet number)
+func SerializeBatchBetMessage(agencyNumber string, batchNumber int, bets []Bet) ([]byte, error) {
+	var result []byte
+	var err error
+
+	// 1st byte: message type
+	result = append(result, MessageTypeBet)
+
+	// 2nd byte: agency number
+	agencyNum := extractAgencyNumber(agencyNumber)
+	result = append(result, agencyNum)
+
+	// 3rd-6th bytes: batch number (4-byte big endian integer)
+	if batchNumber < 0 || batchNumber > 0xFFFFFFFF {
+		return nil, fmt.Errorf("batch number out of range: %d (must be 0 to %d)", batchNumber, 0xFFFFFFFF)
+	}
+	batchBytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(batchBytes, uint32(batchNumber))
+	result = append(result, batchBytes...)
+
+	// 7th byte: number of bets
+	numBets := len(bets)
+	if numBets > 255 {
+		return nil, fmt.Errorf("too many bets in batch: %d (max 255)", numBets)
+	}
+	result = append(result, byte(numBets))
+
+	// Serialize each bet
+	for _, bet := range bets {
+		// Serialize variable fields (name and surname)
+		result = serializeVariableField(result, bet.Name)
+		result = serializeVariableField(result, bet.Surname)
+
+		// Serialize fixed fields (DNI and birthday)
+		result, err = serializeFixedField(result, bet.DNI, DNISize, "DNI")
+		if err != nil {
+			return nil, err
+		}
+
+		result, err = serializeFixedField(result, bet.Birthday, BirthdaySize, "Birthday")
+		if err != nil {
+			return nil, err
+		}
+
+		// Serialize BetNumber field (4-byte big endian integer)
+		if len(bet.BetNumber) == 0 {
+			return nil, fmt.Errorf("invalid BetNumber field: cannot be empty")
+		}
+		result, err = serializeBetNumberField(result, bet.BetNumber)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return result, nil
 }

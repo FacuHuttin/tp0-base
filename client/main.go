@@ -39,11 +39,10 @@ func InitConfig() (*viper.Viper, error) {
 	v.BindEnv("loop", "period")
 	v.BindEnv("loop", "amount")
 	v.BindEnv("log", "level")
-	v.BindEnv("name")
-	v.BindEnv("surname")
-	v.BindEnv("dni")
-	v.BindEnv("birthday")
-	v.BindEnv("betnumber")
+	v.BindEnv("batch", "maxAmount")
+	v.BindEnv("bets", "agencyFile")
+	v.BindEnv("retry", "maxRetries")
+	v.BindEnv("retry", "baseBackoff")
 
 	// Try to read configuration from config file. If config file
 	// does not exists then ReadInConfig will fail but configuration
@@ -88,17 +87,14 @@ func InitLogger(logLevel string) error {
 // PrintConfig Print all the configuration parameters of the program.
 // For debugging purposes only
 func PrintConfig(v *viper.Viper) {
-	log.Infof("action: config | result: success | client_id: %s | server_address: %s | loop_amount: %v | loop_period: %v | log_level: %s | name: %s | surname: %s | dni: %s | birthday: %s | betnumber: %s",
+	log.Infof("action: config | result: success | client_id: %s | server_address: %s | loop_amount: %v | loop_period: %v | log_level: %s | batch_maxAmount: %s | bets_agencyFile: %s",
 		v.GetString("id"),
 		v.GetString("server.address"),
 		v.GetInt("loop.amount"),
 		v.GetDuration("loop.period"),
 		v.GetString("log.level"),
-		v.GetString("name"),
-		v.GetString("surname"),
-		v.GetString("dni"),
-		v.GetString("birthday"),
-		v.GetString("betnumber"),
+		v.GetInt("batch.maxAmount"),
+		v.GetString("bets.agencyFile"),
 	)
 }
 
@@ -120,17 +116,20 @@ func main() {
 		ID:            v.GetString("id"),
 		LoopAmount:    v.GetInt("loop.amount"),
 		LoopPeriod:    v.GetDuration("loop.period"),
-		Name:          v.GetString("name"),
-		Surname:       v.GetString("surname"),
-		DNI:           v.GetString("dni"),
-		Birthday:      v.GetString("birthday"),
-		BetNumber:     v.GetString("betnumber"),
+		BatchMaxAmount: v.GetInt("batch.maxAmount"),
+		BetsFile:      v.GetString("bets.agencyFile"),
+		MaxRetries:    v.GetInt("retry.maxRetries"),
+		BaseBackoff:   v.GetDuration("retry.baseBackoff"),
 	}
 
 	// Setup signal handling for graceful shutdown
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, syscall.SIGTERM)
 
-	client := common.NewClient(clientConfig)
+	client, err := common.NewClient(clientConfig)
+	if err != nil {
+		log.Criticalf("error creating client: %v", err)
+		os.Exit(1)
+	}
 	os.Exit(client.StartClientLoop(signalChan))
 }

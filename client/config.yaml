@@ -7,4 +7,9 @@ loop:
 log:
   level: "INFO"
 batch:
-  maxAmount: 10
+  maxAmount: 15
+bets:
+  agencyFile: "agency.csv"
+retry:
+  maxRetries: 5
+  baseBackoff: "100ms"

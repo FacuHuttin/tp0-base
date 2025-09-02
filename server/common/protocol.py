@@ -1,11 +1,27 @@
 """
-Protocol module for the betting system server.
+Protocol mMessage Types:
+- MESSAGE_TYPE_BET (1): Client sends bet information to server (now supports batches)
+- MESSAGE_TYPE_ACK (2): Server acknowledges batch of bets (type + agency + batch number)
+- MESSAGE_TYPE_CLOSE (3): Graceful connection shutdown
+
+Batch Bet Message Format:
+1st byte: message type (MESSAGE_TYPE_BET)
+2nd byte: agency number
+3rd-6th bytes: batch number (4-byte big endian integer)
+7th byte: number of bets (n)
+Following bytes: n times (name + surname + DNI + birthday + bet number)
+
+ACK Message Format:
+1st byte: message type (MESSAGE_TYPE_ACK)
+2nd byte: agency number
+3rd-6th bytes: batch number (4-byte big endian integer)he betting system server.
 
 This module handles message serialization, deserialization, and protocol constants
 for communication between client and server.
 
 Protocol Overview:
 - All messages start with a message type byte
+- For batch bet messages: agency number, batch number, bets count, then bet data
 - Fixed fields (DNI, Birthday) have predefined sizes and no length prefix
 - Variable fields (Name, Surname) have a length byte followed by content
 - BetNumber is a fixed 4-byte field stored as big endian 32-bit integer
@@ -15,6 +31,13 @@ Message Types:
 - MESSAGE_TYPE_BET (1): Client sends bet information to server
 - MESSAGE_TYPE_ACK (2): Server acknowledges bet receipt
 - MESSAGE_TYPE_CLOSE (3): Graceful connection shutdown
+
+Batch Bet Message Format:
+1st byte: message type (MESSAGE_TYPE_BET)
+2nd byte: agency number
+3rd byte: batch number
+4th byte: number of bets (n)
+Following bytes: n times (name + surname + DNI + birthday + bet number)
 """
 
 import logging
@@ -29,6 +52,8 @@ MESSAGE_TYPE_CLOSE = 3
 # Common protocol field sizes
 MESSAGE_TYPE_SIZE = 1
 AGENCY_NUMBER_SIZE = 1
+BATCH_NUMBER_SIZE = 4  # Changed to 4 bytes for big endian 32-bit integer
+BETS_COUNT_SIZE = 1    # Number of bets in batch
 DNI_SIZE = 8
 BIRTHDAY_SIZE = 10
 BET_NUMBER_SIZE = 4
@@ -41,46 +66,36 @@ ERR_EMPTY_BET_NUMBER = "invalid BetNumber field: cannot be empty"
 
 
 class AckBetMessage:
-    """Represents an acknowledgment message for a bet"""
+    """Represents an acknowledgment message for a batch of bets"""
 
-    def __init__(self, agency_number: str, dni: str, bet_number: str):
+    def __init__(self, agency_number: int, batch_number: int):
         self.agency_number = agency_number
-        self.dni = dni
-        self.bet_number = bet_number
+        self.batch_number = batch_number
 
     def serialize_ack_bet_message(self):
         """
         Serializes the ACK bet message according to the protocol:
         1st byte: message type (MESSAGE_TYPE_ACK)
         2nd byte: agency number
-        Following 8 bytes: DNI (padded with spaces if shorter)
-        Following 4 bytes: bet number (big endian 32-bit integer)
-        """
-        if not self.bet_number or len(self.bet_number) == 0:
-            raise ValueError(ERR_EMPTY_BET_NUMBER)
-        
+        3rd-6th bytes: batch number (4-byte big endian integer)
+        """        
         result = bytearray()
         
         # Add message type as first byte
         result.append(MESSAGE_TYPE_ACK)
         
-        # Add agency number as second byte
-        try:
-            agency_num = int(self.agency_number)
-            if 0 <= agency_num <= 255:
-                result.append(agency_num)
-            else:
-                result.append(0)  # Default fallback for out of range
-        except ValueError:
-            result.append(0)  # Default fallback for invalid number
+        # Add agency number as second byte (validate range)
+        if 0 <= self.agency_number <= 255:
+            result.append(self.agency_number)
+        else:
+            raise ValueError(f"Agency number out of range: {self.agency_number} (must be 0-255)")
         
-        # Add DNI as fixed 8 bytes
-        dni_bytes = serialize_fixed_field(self.dni, DNI_SIZE, "DNI")
-        result.extend(dni_bytes)
-        
-        # Add bet number as 4-byte big endian integer
-        bet_number_bytes = serialize_bet_number_field(self.bet_number)
-        result.extend(bet_number_bytes)
+        # Add batch number as 4-byte big endian integer
+        if 0 <= self.batch_number <= 0xFFFFFFFF:
+            batch_bytes = self.batch_number.to_bytes(4, byteorder='big')
+            result.extend(batch_bytes)
+        else:
+            raise ValueError(f"Batch number out of range: {self.batch_number} (must be 0 to {0xFFFFFFFF})")
         
         return bytes(result)
 
@@ -192,15 +207,11 @@ def deserialize_bet_message(data: bytes) -> Bet:
     )
 
 
-def create_ack_message(bet: Bet) -> AckBetMessage:
-    """Creates an ACK message from bet information"""
-    if not str(bet.number) or len(str(bet.number)) == 0:
-        raise ValueError("cannot create ACK for bet with empty bet number")
-    
+def create_batch_ack_message(agency_number: int, batch_number: int) -> AckBetMessage:
+    """Creates an ACK message for a batch of bets"""
     return AckBetMessage(
-        agency_number=str(bet.agency),
-        dni=bet.document,
-        bet_number=str(bet.number)
+        agency_number=agency_number,
+        batch_number=batch_number
     )
 
 
@@ -260,7 +271,6 @@ def receive_bet_message_from_connection(connection: TCPConnection) -> bytes:
                        birthday_data + 
                        bet_data)
         
-        logging.info(f"action: bet_message_received | result: success | total_bytes: {len(full_message)}")
         return full_message
         
     except Exception as e:
@@ -275,7 +285,6 @@ def send_ack_message_to_connection(connection: TCPConnection, ack_data: bytes) -
     """
     try:
         connection.send(ack_data)
-        logging.info(f"action: ack_message_sent | result: success | bytes: {len(ack_data)}")
     except Exception as e:
         logging.error(f"action: send_ack_message_to_connection | result: fail | error: {e}")
         raise
@@ -304,3 +313,163 @@ def deserialize_bet_number_field(bet_bytes: bytes) -> str:
     
     bet_int = int.from_bytes(bet_bytes, byteorder='big')
     return str(bet_int)
+
+
+def deserialize_batch_bet_message(data: bytes) -> tuple[int, list[Bet]]:
+    """
+    Deserializes batch bet message according to the new protocol:
+
+    1st byte: message type (MESSAGE_TYPE_BET)
+    2nd byte: agency number
+    3rd-6th bytes: batch number (4-byte big endian integer)
+    7th byte: number of bets (n)
+    Following bytes: n times (name + surname + DNI + birthday + bet number)
+    
+    Returns a tuple of (batch_number, list_of_bets)
+    """
+    if len(data) < 7:
+        raise ValueError("data too short: missing message type, agency number, batch number, or bets count")
+    
+    pos = 0
+    
+    # Check message type
+    validate_message_type(data, MESSAGE_TYPE_BET)
+    pos += 1
+    
+    # Extract agency number (second byte)
+    agency_number = data[pos]
+    pos += 1
+    
+    # Extract batch number (3rd-6th bytes, big endian)
+    if pos + BATCH_NUMBER_SIZE > len(data):
+        raise ValueError("data too short: missing batch number")
+    batch_number_bytes = data[pos:pos + BATCH_NUMBER_SIZE]
+    batch_number = int.from_bytes(batch_number_bytes, byteorder='big')
+    pos += BATCH_NUMBER_SIZE
+    
+    # Extract number of bets (7th byte)
+    bets_count = data[pos]
+    pos += 1
+    
+    bets = []
+    
+    # Deserialize each bet
+    for i in range(bets_count):
+        # Deserialize Name field: length byte + content
+        if pos >= len(data):
+            raise ValueError(f"data too short: missing length for Name field of bet {i+1}")
+        name_length = data[pos]
+        pos += 1
+        if pos + name_length > len(data):
+            raise ValueError(f"data too short: missing content for Name field of bet {i+1}")
+        first_name = data[pos:pos + name_length].decode('utf-8')
+        pos += name_length
+        
+        # Deserialize Surname field: length byte + content
+        if pos >= len(data):
+            raise ValueError(f"data too short: missing length for Surname field of bet {i+1}")
+        surname_length = data[pos]
+        pos += 1
+        if pos + surname_length > len(data):
+            raise ValueError(f"data too short: missing content for Surname field of bet {i+1}")
+        last_name = data[pos:pos + surname_length].decode('utf-8')
+        pos += surname_length
+        
+        # Deserialize DNI field: fixed characters, no length byte
+        if pos + DNI_SIZE > len(data):
+            raise ValueError(f"data too short: missing DNI field ({DNI_SIZE} chars) for bet {i+1}")
+        document = data[pos:pos + DNI_SIZE].decode('utf-8').rstrip()
+        pos += DNI_SIZE
+        
+        # Deserialize Birthday field: fixed characters, no length byte
+        if pos + BIRTHDAY_SIZE > len(data):
+            raise ValueError(f"data too short: missing Birthday field ({BIRTHDAY_SIZE} chars) for bet {i+1}")
+        birthdate = data[pos:pos + BIRTHDAY_SIZE].decode('utf-8').rstrip()
+        pos += BIRTHDAY_SIZE
+        
+        # Deserialize BetNumber field: fixed 4-byte big endian integer
+        if pos + BET_NUMBER_SIZE > len(data):
+            raise ValueError(f"data too short: missing BetNumber field ({BET_NUMBER_SIZE} bytes) for bet {i+1}")
+        bet_number_bytes = data[pos:pos + BET_NUMBER_SIZE]
+        number = deserialize_bet_number_field(bet_number_bytes)
+        pos += BET_NUMBER_SIZE
+        
+        # Create Bet object and add to list
+        bet = Bet(
+            agency=agency_number,
+            first_name=first_name,
+            last_name=last_name,
+            document=document,
+            birthdate=birthdate,
+            number=number
+        )
+        bets.append(bet)
+    
+    return batch_number, bets
+
+
+def receive_batch_bet_message_from_connection(connection: TCPConnection, message_type: int = None) -> bytes:
+    """
+    Receives a batch bet message from connection using protocol knowledge.
+    If message_type is provided, it means the message type was already read.
+    Returns the complete message data as bytes including the message type.
+    """
+    try:
+        if message_type is None:
+            # Read the message type (1 byte)
+            message_type_data = connection.receive_exact_bytes(1)
+            message_type = message_type_data[0]
+            
+            # Verify it's a bet message
+            if message_type != MESSAGE_TYPE_BET:
+                raise ValueError(f"expected bet message type {MESSAGE_TYPE_BET}, got {message_type}")
+        else:
+            # Message type was already read, create the data
+            message_type_data = bytes([message_type])
+        
+        # Read the agency number (1 byte)
+        agency_data = connection.receive_exact_bytes(AGENCY_NUMBER_SIZE)
+        
+        # Read batch number (1 byte)
+        batch_data = connection.receive_exact_bytes(BATCH_NUMBER_SIZE)
+        
+        # Read number of bets (1 byte)
+        bets_count_data = connection.receive_exact_bytes(BETS_COUNT_SIZE)
+        bets_count = bets_count_data[0]
+        
+        # Read the data for all bets
+        remaining_data = bytearray()
+        
+        for i in range(bets_count):
+            # Read name length and content
+            name_length_data = connection.receive_exact_bytes(1)
+            name_length = name_length_data[0]
+            remaining_data.extend(name_length_data)
+            if name_length > 0:
+                name_data = connection.receive_exact_bytes(name_length)
+                remaining_data.extend(name_data)
+            
+            # Read surname length and content
+            surname_length_data = connection.receive_exact_bytes(1)
+            surname_length = surname_length_data[0]
+            remaining_data.extend(surname_length_data)
+            if surname_length > 0:
+                surname_data = connection.receive_exact_bytes(surname_length)
+                remaining_data.extend(surname_data)
+            
+            # Read fixed fields
+            dni_data = connection.receive_exact_bytes(DNI_SIZE)
+            birthday_data = connection.receive_exact_bytes(BIRTHDAY_SIZE)
+            bet_number_data = connection.receive_exact_bytes(BET_NUMBER_SIZE)
+            
+            remaining_data.extend(dni_data)
+            remaining_data.extend(birthday_data)
+            remaining_data.extend(bet_number_data)
+        
+        # Combine all data according to protocol (including message type)
+        full_message = (message_type_data + agency_data + batch_data + bets_count_data + bytes(remaining_data))
+        return full_message
+        
+    except Exception as e:
+        logging.error(f"action: receive_batch_bet_message_from_connection | result: fail | error: {e}")
+        raise

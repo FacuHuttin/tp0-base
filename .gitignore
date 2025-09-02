@@ -5,4 +5,4 @@
 bin/
 
 # Carpeta CSVs
-data/
+**.csv

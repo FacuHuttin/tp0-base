@@ -1,79 +1,70 @@
 import logging
+
 from .utils import Bet, store_bets
 from .transport import TCPConnection
 from .protocol import (
     MESSAGE_TYPE_BET, MESSAGE_TYPE_ACK, MESSAGE_TYPE_CLOSE,
-    AGENCY_NUMBER_SIZE, DNI_SIZE, BIRTHDAY_SIZE,
-    deserialize_bet_message, create_ack_message, receive_message_type,
-    receive_bet_message_from_connection, send_ack_message_to_connection
+    AGENCY_NUMBER_SIZE, DNI_SIZE, BIRTHDAY_SIZE, BET_NUMBER_SIZE,
+    deserialize_batch_bet_message, create_batch_ack_message, receive_message_type,
+    receive_batch_bet_message_from_connection, send_ack_message_to_connection
 )
 
-def process_bet_message(data: bytes):
+def process_batch_bet_message(data: bytes):
     """
-    Processes a bet message and returns the ACK response
+    Processes a batch bet message and returns the ACK response
     """
     try:
-        # Deserialize the incoming bet message
-        bet = deserialize_bet_message(data)
+        # Deserialize the incoming batch bet message
+        batch_number, bets = deserialize_batch_bet_message(data)
         
-        logging.info(f"action: bet_received | result: success | agency: {bet.agency} | "
-                    f"name: {bet.first_name} | surname: {bet.last_name} | dni: {bet.document} | "
-                    f"birthday: {bet.birthdate} | bet_number: {bet.number}")
-        
-        # Store the bet using the utils function
-        store_bets([bet])
-        logging.info(f"action: apuesta_almacenada | result: success | dni: {bet.document} | numero: {bet.number}")
+        # Store all bets in the batch
+        store_bets(bets)
 
-        # Create ACK message
-        ack_message = create_ack_message(bet)
+        # Create ACK message for the batch
+        agency_number = bets[0].agency if bets else 0  # Get agency from first bet
+        ack_message = create_batch_ack_message(agency_number, batch_number)
         
         # Serialize ACK message
         ack_data = ack_message.serialize_ack_bet_message()
         
-        logging.info(f"action: ack_created | result: success | agency: {bet.agency} | "
-                    f"dni: {bet.document} | bet_number: {bet.number}")
+        logging.info(f"action: apuesta_recibida | result: success | cantidad: {len(bets)}")
         
         return ack_data
         
     except Exception as e:
-        logging.error(f"action: process_bet_message | result: fail | error: {e}")
+        logging.error(f"action: apuesta_recibida | result: fail | cantidad: {len(bets)} | error: {e}")
         raise
 
 def process_communication(connection: TCPConnection):
     """
-    Handles the communication protocol:
-    1. Receive complete message using protocol functions
-    2. Handle message based on type (bet, ack, or close)
+    Handles the communication protocol for batch betting:
+    1. Receive batch bet message -> send ACK -> repeat until close message
+    2. Each batch is processed independently
     Returns True if successful, False otherwise
     """
     try:
-        # Use the protocol function to receive the bet message directly
-        # This function will handle reading the message type and all data
-        bet_message_data = receive_bet_message_from_connection(connection)
-        
-        # Process the bet message and get ACK response
-        ack_data = process_bet_message(bet_message_data)
-        
-        # Send ACK response
-        send_ack_message_to_connection(connection, ack_data)
-        
-        # Wait for close message from client
-        close_message_type = receive_message_type(connection)
-        if close_message_type == MESSAGE_TYPE_CLOSE:
-            logging.info("action: close_message_received | result: success")
-            return True
-        else:
-            logging.error(f"action: expected_close_message | result: fail | received_type: {close_message_type}")
-            return False
+        while True:
+            # Receive message type first
+            message_type = receive_message_type(connection)
+            
+            if message_type == MESSAGE_TYPE_BET:
+                # Receive the complete batch bet message using protocol function
+                # Pass the message_type since we already read it
+                bet_message_data = receive_batch_bet_message_from_connection(connection, message_type)
+                
+                # Process the batch bet message and get ACK response
+                ack_data = process_batch_bet_message(bet_message_data)
+                
+                # Send ACK response
+                send_ack_message_to_connection(connection, ack_data)
+                
+            elif message_type == MESSAGE_TYPE_CLOSE:
+                return True
+                
+            else:
+                logging.error(f"action: unexpected_message_type | result: fail | type: {message_type}")
+                return False
         
     except Exception as e:
         logging.error(f"action: process_communication | result: fail | error: {e}")
         return False
-
-
-def handle_close_message(connection: TCPConnection):
-    """
-    Handles a close message - just logs it since no response is needed
-    """
-    logging.info("action: close_message_received | result: success")
-    return True
