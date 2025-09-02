@@ -25,6 +25,7 @@ def generate_client_content(client_id):
     entrypoint: /client
     environment:
       - CLI_ID={client_id}
+      - CLI_BETFILE=/agency.csv
     volumes:
       - ./client/config.yaml:/config.yaml
       - ./.data/agency-{client_id}.csv:/agency.csv
