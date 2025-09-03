@@ -216,7 +216,7 @@ func (c *Client) queryWinnersWithPersistentConnection(signalChan <-chan os.Signa
 
 		sleepDuration = c.config.BaseSleep * time.Duration(1<<attempt)
 
-		log.Debugf("action: winners_query_retry | result: scheduled | client_id: %v | sleep: %v",
+		log.Debugf("action: winners_query_retry | result: in_progress | client_id: %v | sleep: %v",
 			c.config.ID, sleepDuration)
 
 		if c.sleepWithSignalCheck(signalChan, sleepDuration) {
@@ -274,7 +274,7 @@ func (c *Client) connectWithSleep(signalChan <-chan os.Signal) error {
 
 		sleepDuration := c.config.BaseSleep * time.Duration(attempt+1)
 
-		log.Debugf("action: connect_retry | result: scheduled | client_id: %v | attempt: %v | sleep: %v",
+		log.Debugf("action: connect_retry | result: in_progress | client_id: %v | attempt: %v | sleep: %v",
 			c.config.ID, attempt+1, sleepDuration)
 
 		if c.sleepWithSignalCheck(signalChan, sleepDuration) {

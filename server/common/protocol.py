@@ -288,7 +288,7 @@ def receive_message_type(connection: TCPConnection, server=None) -> int:
         message_type_data = connection.receive_exact_bytes(MESSAGE_TYPE_SIZE)
         return message_type_data[0]
     except ShutdownRequestedError as e:
-        logging.debug(f"action: receive_message_type | result: shutdown | info: {e}")
+        logging.debug(f"action: receive_message_type_shutdown | result: in_progress | info: {e}")
         raise
     except ConnectionError as e:
         logging.error(f"action: receive_message_type | result: fail | error: {e}")
@@ -528,7 +528,7 @@ def receive_batch_bet_message_from_connection(connection: TCPConnection, message
         return full_message
         
     except ShutdownRequestedError as e:
-        logging.debug(f"action: receive_batch_bet_message_from_connection | result: shutdown | info: {e}")
+        logging.debug(f"action: receive_batch_bet_message_from_connection_shutdown | result: in_progress | info: {e}")
         raise
     except ConnectionError as e:
         logging.error(f"action: receive_batch_bet_message_from_connection | result: fail | error: {e}")

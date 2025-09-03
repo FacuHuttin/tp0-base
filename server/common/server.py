@@ -50,7 +50,7 @@ class AgencyHandler(threading.Thread):
             elif self.client_socket:
                 self.client_socket.close()
         except Exception as e:
-            logging.debug(f'action: agency_handler_cleanup | error: {e}')
+            logging.error(f'action: agency_handler_cleanup | result: fail | error: {e}')
 
 class Server:
     def __init__(self, port, listen_backlog, timeout, total_agencies):
@@ -128,24 +128,24 @@ class Server:
                     continue
                 except OSError as e:
                     if self.shutdown_requested:
-                        logging.debug('action: server_socket_closed_during_shutdown')
+                        logging.debug('action: server_socket_closed_during_shutdown | result: in_progress')
                         break
                     else:
-                        logging.error(f'action: accept_error | error: {e}')
+                        logging.error(f'action: accept_error | result: fail | error: {e}')
                         break
             
             # Wait for all agencies to complete their betting
             self._wait_for_all_threads_to_finish()
             
         except Exception as e:
-            logging.error(f'action: server_error | error: {e}')
+            logging.error(f'action: server_error | result: fail | error: {e}')
         finally:
             self._cleanup()
     
     def _accept_new_connection(self):
         """Accept new connection with proper error handling"""
         try:
-            logging.debug('action: accept_connections | result: waiting')
+            logging.debug('action: accept_connections | result: in_progress')
             client_sock, addr = self._server_socket.accept()
             logging.info(f'action: accept_connections | result: success | ip: {addr[0]}')
             return client_sock

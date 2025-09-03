@@ -126,7 +126,7 @@ func (cs *AgencyService) ProcessCommunication(signalChan <-chan os.Signal) error
 		// Check for signal before each batch
 		select {
 		case <-signalChan:
-			log.Debugf("action: signal_received | result: stopping | client_id: %v | batch: %d",
+			log.Debugf("action: shutdown_signal_received | result: in_progress | client_id: %v | batch: %d",
 				cs.agencyInfo.ID, batchIndex)
 			if err := cs.SendCloseMessage(); err != nil {
 				return fmt.Errorf("error sending close message: %v", err)
@@ -184,7 +184,7 @@ func (cs *AgencyService) ProcessCommunication(signalChan <-chan os.Signal) error
 func (cs *AgencyService) ProcessWinnersQuery(signalChan <-chan os.Signal, attempt int, sleepTime time.Duration) error {
 	select {
 	case <-signalChan:
-		log.Debugf("action: signal_received | result: stopping | client_id: %v | winners_query_attempt: %d",
+		log.Debugf("action: shutdown_signal_received | result: in_progress | client_id: %v | winners_query_attempt: %d",
 			cs.agencyInfo.ID, attempt)
 		return fmt.Errorf("client interrupted during winners query")
 	default:
@@ -224,7 +224,7 @@ func (cs *AgencyService) ProcessWinnersQuery(signalChan <-chan os.Signal, attemp
 	// Winners not available yet, don't send close message (keep connection open)
 	// The connection will be reused for the next winners query attempt
 
-	log.Debugf("action: winners_not_available | result: retry_scheduled | client_id: %v | attempt: %d | sleep_time: %v",
+	log.Debugf("action: winners_not_available | result: in_progress | client_id: %v | attempt: %d | sleep_time: %v",
 		cs.agencyInfo.ID, attempt+1, sleepTime)
 
 	return fmt.Errorf("winners not available yet")

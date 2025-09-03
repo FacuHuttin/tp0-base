@@ -41,11 +41,7 @@ class Central:
             logging.info(f"action: agency_completion | result: success | agency: {agency_number} | completed_agencies: {len(self.agencies_completed)} | total_agencies: {self.total_agencies}")
             
             if len(self.agencies_completed) == self.total_agencies:
-                logging.debug(f"action: all_agencies_completed_check | completed: {len(self.agencies_completed)} | total: {self.total_agencies} | conducting_lottery: True")
                 return self.conduct_lottery()
-            else:
-                logging.debug(f"action: all_agencies_completed_check | completed: {len(self.agencies_completed)} | total: {self.total_agencies} | conducting_lottery: False")
-            
             return False
     
     def conduct_lottery(self) -> bool:
@@ -133,7 +129,7 @@ class Central:
         try:
             while True:
                 if server and server.shutdown_requested:
-                    logging.debug("action: process_communication | result: shutdown_requested")
+                    logging.debug("action: process_communication | result: in_progress |shutdown_requested")
                     return True
                 
                 # Receive message type first
@@ -180,7 +176,7 @@ class Central:
                     return False
             
         except ShutdownRequestedError as e:
-            logging.debug(f"action: process_communication | result: shutdown | info: {e}")
+            logging.debug(f"action: process_communication_shutdown | result: in_progress | info: {e}")
             return True
         except ConnectionError as e:
             logging.error(f"action: process_communication | result: fail | error: {e}")
