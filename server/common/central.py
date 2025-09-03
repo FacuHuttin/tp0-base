@@ -29,9 +29,7 @@ class Central:
         self._state_lock = threading.Lock()
         # Lock for thread-safe access to storage functions
         self._storage_lock = threading.Lock()
-        
-        logging.info(f"action: central_init | total_agencies: {total_agencies}")
-    
+            
     def process_agency_completion(self, agency_number: int) -> bool:
         """
         Process agency completion notification and conduct lottery if all agencies are done
