@@ -1,7 +1,7 @@
 import sys
 import os
 
-def generate_base_content():
+def generate_base_content(num_clients):
     return f"""name: tp0
 services:
   server:
@@ -11,7 +11,7 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - SERVER_TIMEOUT=1.0
-      - SERVER_TOTAL_AGENCIES=5
+      - SERVER_TOTAL_AGENCIES={num_clients}
     volumes:
       - ./server/config.ini:/config.ini
     networks:
@@ -28,7 +28,7 @@ def generate_client_content(client_id):
     environment:
       - CLI_ID={client_id}
       - CLI_BETFILE=/agency.csv
-      - CLI_MAXRETRIES=30
+      - CLI_MAXRETRIES=10
       - CLI_BASEBACKOFF=100ms
     volumes:
       - ./client/config.yaml:/config.yaml
@@ -51,7 +51,7 @@ def generate_network_content():
 
 def generate_docker_compose(output_file, num_clients):
 
-  base_content = generate_base_content()
+  base_content = generate_base_content(num_clients)
   network_content = generate_network_content()
 
   clients_content = ""
