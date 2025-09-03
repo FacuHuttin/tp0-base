@@ -130,8 +130,6 @@ func (c *Client) queryWinnersWithBackoff(signalChan <-chan os.Signal) error {
 		// Try to connect for winners query
 		connectionTimeout := baseBackoff * 5
 		if err := conn.ConnectWithTimeout(connectionTimeout); err != nil {
-			log.Infof("action: winners_query_connect | result: fail | client_id: %v | attempt: %d | error: %v",
-				c.config.ID, attempt+1, err)
 
 			if attempt == maxRetries {
 				return fmt.Errorf("failed to connect for winners query after %d attempts", maxRetries+1)
@@ -163,9 +161,6 @@ func (c *Client) queryWinnersWithBackoff(signalChan <-chan os.Signal) error {
 		if err.Error() == "client interrupted during winners query" || err.Error() == "client interrupted during backoff" {
 			return err
 		}
-
-		log.Infof("action: winners_query | result: fail | client_id: %v | attempt: %d | error: %v",
-			c.config.ID, attempt+1, err)
 
 		// If this was the last attempt, return the error
 		if attempt == maxRetries {
