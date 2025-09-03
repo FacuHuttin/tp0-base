@@ -42,7 +42,9 @@ func InitConfig() (*viper.Viper, error) {
 	v.BindEnv("batch", "maxAmount")
 	v.BindEnv("betfile")
 	v.BindEnv("maxretries")
-	v.BindEnv("basebackoff")
+	v.BindEnv("basesleep")
+	v.BindEnv("sleepinterval")
+	v.BindEnv("timeout")
 
 	// Try to read configuration from config file. If config file
 	// does not exists then ReadInConfig will fail but configuration
@@ -87,7 +89,7 @@ func InitLogger(logLevel string) error {
 // PrintConfig Print all the configuration parameters of the program.
 // For debugging purposes only
 func PrintConfig(v *viper.Viper) {
-	log.Infof("action: config | result: success | client_id: %s | server_address: %s | loop_amount: %v | loop_period: %v | log_level: %s | batch_maxAmount: %s | bets_agencyFile: %s | max_retries: %d | base_backoff: %v",
+	log.Infof("action: config | result: success | client_id: %s | server_address: %s | loop_amount: %v | loop_period: %v | log_level: %s | batch_maxAmount: %v | bets_agencyFile: %s | max_retries: %v | base_sleep: %v | sleep_interval: %v | timeout: %v",
 		v.GetString("id"),
 		v.GetString("server.address"),
 		v.GetInt("loop.amount"),
@@ -96,7 +98,9 @@ func PrintConfig(v *viper.Viper) {
 		v.GetInt("batch.maxAmount"),
 		v.GetString("betfile"),
 		v.GetInt("maxretries"),
-		v.GetDuration("basebackoff"),
+		v.GetDuration("basesleep"),
+		v.GetDuration("sleepinterval"),
+		v.GetDuration("timeout"),
 	)
 }
 
@@ -121,7 +125,9 @@ func main() {
 		BatchMaxAmount: v.GetInt("batch.maxAmount"),
 		BetsFile:      v.GetString("betfile"),
 		MaxRetries:    v.GetInt("maxretries"),
-		BaseBackoff:   v.GetDuration("basebackoff"),
+		BaseSleep:     v.GetDuration("basesleep"),
+		SleepInterval: v.GetDuration("sleepinterval"),
+		Timeout:       v.GetDuration("timeout"),
 	}
 
 	// Setup signal handling for graceful shutdown

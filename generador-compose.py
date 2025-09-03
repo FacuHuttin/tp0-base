@@ -29,7 +29,9 @@ def generate_client_content(client_id):
       - CLI_ID={client_id}
       - CLI_BETFILE=/agency.csv
       - CLI_MAXRETRIES=10
-      - CLI_BASEBACKOFF=100ms
+      - CLI_BASESLEEP=100ms
+      - CLI_SLEEPINTERVAL=100ms
+      - CLI_TIMEOUT=1s
     volumes:
       - ./client/config.yaml:/config.yaml
       - ./.data/agency-{client_id}.csv:/agency.csv
