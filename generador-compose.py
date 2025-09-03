@@ -29,7 +29,7 @@ def generate_client_content(client_id):
       - CLI_ID={client_id}
       - CLI_BETFILE=/agency.csv
       - CLI_MAXRETRIES=10
-      - CLI_BASESLEEP=100ms
+      - CLI_BASESLEEP=500ms
       - CLI_SLEEPINTERVAL=100ms
       - CLI_TIMEOUT=1s
     volumes:

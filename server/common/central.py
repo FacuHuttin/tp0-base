@@ -1,4 +1,5 @@
 import logging
+import threading
 
 from .utils import store_bets, load_bets, has_won
 from .transport import TCPConnection, ShutdownRequestedError
@@ -11,37 +12,12 @@ from .protocol import (
     create_winners_available_response, receive_winners_request
 )
 
-def process_batch_bet_message(data: bytes):
-    """
-    Processes a batch bet message and returns the ACK response
-    """
-    try:
-        # Deserialize the incoming batch bet message
-        batch_number, bets = deserialize_batch_bet_message(data)
-        
-        # Store all bets in the batch
-        store_bets(bets)
-
-        # Create ACK message for the batch
-        agency_number = bets[0].agency if bets else 0  # Get agency from first bet
-        ack_message = create_batch_ack_message(agency_number, batch_number)
-        
-        # Serialize ACK message
-        ack_data = ack_message.serialize_ack_bet_message()
-        
-        logging.info(f"action: apuesta_recibida | result: success | cantidad: {len(bets)}")
-        
-        return ack_data
-        
-    except Exception as e:
-        logging.error(f"action: apuesta_recibida | result: fail | cantidad: {len(bets)} | error: {e}")
-        raise
-
 
 class Central:
     """
     Manages the lottery state and agency completion tracking.
     Handles all communication protocol logic for bet processing and winner queries.
+    Thread-safe implementation with proper synchronization.
     """
     
     def __init__(self, total_agencies: int):
@@ -49,35 +25,50 @@ class Central:
         self.lottery_completed = False
         self.total_agencies = total_agencies
         self.agency_winners_dict = {}
+        # Lock for thread-safe access to shared state
+        self._state_lock = threading.Lock()
+        # Lock for thread-safe access to storage functions
+        self._storage_lock = threading.Lock()
+        
+        logging.info(f"action: central_init | total_agencies: {total_agencies}")
     
     def process_agency_completion(self, agency_number: int) -> bool:
         """
         Process agency completion notification and conduct lottery if all agencies are done
         Returns True if lottery was conducted, False otherwise
+        Thread-safe implementation.
         """
-        self.agencies_completed.add(agency_number)
-        logging.info(f"action: agency_completion | result: success | agency: {agency_number} | completed_agencies: {len(self.agencies_completed)}")
-        
-        if len(self.agencies_completed) == self.total_agencies:
-            return self.conduct_lottery()
-        
-        return False
+        with self._state_lock:
+            self.agencies_completed.add(agency_number)
+            logging.info(f"action: agency_completion | result: success | agency: {agency_number} | completed_agencies: {len(self.agencies_completed)} | total_agencies: {self.total_agencies}")
+            
+            if len(self.agencies_completed) == self.total_agencies:
+                logging.info(f"action: all_agencies_completed_check | completed: {len(self.agencies_completed)} | total: {self.total_agencies} | conducting_lottery: True")
+                return self.conduct_lottery()
+            else:
+                logging.info(f"action: all_agencies_completed_check | completed: {len(self.agencies_completed)} | total: {self.total_agencies} | conducting_lottery: False")
+            
+            return False
     
     def conduct_lottery(self) -> bool:
         """
         Conduct the lottery when all agencies have completed sending bets
         Returns True if lottery was conducted, False if already conducted
+        NOTE: This method should be called while holding the _state_lock
         """
         if not self.lottery_completed:
             self.lottery_completed = True
             
-            for bet in load_bets():
-                if has_won(bet):
-                    if bet.agency not in self.agency_winners_dict:
-                        self.agency_winners_dict[bet.agency] = []
-                    self.agency_winners_dict[bet.agency].append(bet.document)
+            # Load bets in a thread-safe manner
+            with self._storage_lock:
+                for bet in load_bets():
+                    if has_won(bet):
+                        if bet.agency not in self.agency_winners_dict:
+                            self.agency_winners_dict[bet.agency] = []
+                        self.agency_winners_dict[bet.agency].append(bet.document)
             
             logging.info("action: sorteo | result: success")
+            
             return True
         
         return False
@@ -85,15 +76,19 @@ class Central:
     def is_lottery_completed(self) -> bool:
         """
         Check if the lottery has been completed
+        Thread-safe implementation.
         """
-        return self.lottery_completed
+        with self._state_lock:
+            return self.lottery_completed
     
     def get_agency_winners(self, agency_number: int) -> list[str]:
         """
         Get the list of winning DNIs for a specific agency
+        Thread-safe implementation.
         """
         try:
-            winners = self.agency_winners_dict.get(agency_number, [])
+            with self._state_lock:
+                winners = self.agency_winners_dict.get(agency_number, [])
             
             logging.info(f"action: winners_query | result: success | agency: {agency_number} | winners_count: {len(winners)}")
             return winners
@@ -101,6 +96,33 @@ class Central:
         except Exception as e:
             logging.error(f"action: winners_query | result: fail | agency: {agency_number} | error: {e}")
             return []
+    
+    def process_batch_bet_message(self, data: bytes):
+        """
+        Processes a batch bet message and returns the ACK response
+        """
+        try:
+            # Deserialize the incoming batch bet message
+            batch_number, bets = deserialize_batch_bet_message(data)
+            
+            # Store all bets in the batch (thread-safe)
+            with self._storage_lock:
+                store_bets(bets)
+
+            # Create ACK message for the batch
+            agency_number = bets[0].agency if bets else 0  # Get agency from first bet
+            ack_message = create_batch_ack_message(agency_number, batch_number)
+            
+            # Serialize ACK message
+            ack_data = ack_message.serialize_ack_bet_message()
+            
+            logging.info(f"action: apuesta_recibida | result: success | cantidad: {len(bets)}")
+            
+            return ack_data
+            
+        except Exception as e:
+            logging.error(f"action: apuesta_recibida | result: fail | cantidad: {len(bets)} | error: {e}")
+            raise
     
     def process_communication(self, connection: TCPConnection, server=None):
         """
@@ -125,7 +147,7 @@ class Central:
                     bet_message_data = receive_batch_bet_message_from_connection(connection, message_type, server)
                     
                     # Process the batch bet message and get ACK response
-                    ack_data = process_batch_bet_message(bet_message_data)
+                    ack_data = self.process_batch_bet_message(bet_message_data)
                     
                     connection.send(ack_data)
                     

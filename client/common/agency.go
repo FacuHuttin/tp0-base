@@ -171,10 +171,8 @@ func (cs *AgencyService) ProcessCommunication(signalChan <-chan os.Signal) error
 		return fmt.Errorf("error receiving notification response: %v", err)
 	}
 
-	// Send close message after notification
-	if err := cs.SendCloseMessage(); err != nil {
-		return fmt.Errorf("error sending close message: %v", err)
-	}
+	// Don't send close message here - keep connection open for winner queries
+	// The close message will be sent only after winners are successfully retrieved
 
 	log.Infof("action: communication_completed | result: success | client_id: %v | total_batches: %d",
 		cs.agencyInfo.ID, cs.agencyInfo.GetBatchCount())
@@ -214,7 +212,7 @@ func (cs *AgencyService) ProcessWinnersQuery(signalChan <-chan os.Signal, attemp
 		// Winners are available!
 		log.Infof("action: consulta_ganadores | result: success | cant_ganadores: %d", len(winners))
 
-		// Send close message
+		// Send close message only when winners are available (end of communication)
 		if err := cs.SendCloseMessage(); err != nil {
 			log.Errorf("action: send_close_message | result: fail | client_id: %v | error: %v",
 				cs.agencyInfo.ID, err)
@@ -223,11 +221,8 @@ func (cs *AgencyService) ProcessWinnersQuery(signalChan <-chan os.Signal, attemp
 		return nil
 	}
 
-	// Winners not available yet, send close and retry
-	if err := cs.SendCloseMessage(); err != nil {
-		log.Errorf("action: send_close_message | result: fail | client_id: %v | error: %v",
-			cs.agencyInfo.ID, err)
-	}
+	// Winners not available yet, don't send close message (keep connection open)
+	// The connection will be reused for the next winners query attempt
 
 	log.Debugf("action: winners_not_available | result: retry_scheduled | client_id: %v | attempt: %d | sleep_time: %v",
 		cs.agencyInfo.ID, attempt+1, sleepTime)
