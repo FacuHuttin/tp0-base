@@ -22,6 +22,10 @@ import (
 // - MessageTypeBet (1): Client sends bet information to server (now supports batches)
 // - MessageTypeAck (2): Server acknowledges batch of bets sent (type + agency + batch number)
 // - MessageTypeClose (3): Graceful connection shutdown
+// - MessageTypeNotification (4): Client notifies completion of bet sending
+// - MessageTypeWinnersRequest (5): Client requests winners
+// - MessageTypeWinnersNotAvailable (6): Server responds winners not ready
+// - MessageTypeWinnersAvailable (7): Server responds with winners
 //
 // Batch Bet Message Format:
 // 1st byte: message type (MessageTypeBet)
@@ -37,9 +41,14 @@ import (
 
 // Protocol message types
 const (
-	MessageTypeBet   = 1
-	MessageTypeAck   = 2
-	MessageTypeClose = 3
+	MessageTypeBet                 = 1
+	MessageTypeAck                 = 2
+	MessageTypeClose               = 3
+	MessageTypeNotification        = 4 // Client notifies completion of bet sending
+	MessageTypeNotificationAck     = 5 // Server acknowledges notification
+	MessageTypeWinnersRequest      = 6 // Client requests winners
+	MessageTypeWinnersNotAvailable = 7 // Server responds winners not ready
+	MessageTypeWinnersAvailable    = 8 // Server responds with winners
 )
 
 // Common protocol field sizes
@@ -138,6 +147,99 @@ func SendBatchBetMessage(connection Connection, agencyNumber string, batchNumber
 		return fmt.Errorf("error serializing batch bet message: %v", err)
 	}
 	return connection.Send(batchMessage)
+}
+
+// CreateNotificationMessage creates a notification message to inform server that all bets have been sent
+func CreateNotificationMessage(agencyNumber string) []byte {
+	agencyNum := extractAgencyNumber(agencyNumber)
+	return []byte{MessageTypeNotification, agencyNum}
+}
+
+// CreateWinnersRequestMessage creates a request message to ask for winners
+func CreateWinnersRequestMessage(agencyNumber string) []byte {
+	agencyNum := extractAgencyNumber(agencyNumber)
+	return []byte{MessageTypeWinnersRequest, agencyNum}
+}
+
+// SendNotificationMessage sends a notification to the server that all bets have been sent
+func SendNotificationMessage(connection Connection, agencyNumber string) error {
+	notificationMessage := CreateNotificationMessage(agencyNumber)
+	return connection.Send(notificationMessage)
+}
+
+// SendWinnersRequestMessage sends a winners request to the server
+func SendWinnersRequestMessage(connection Connection, agencyNumber string) error {
+	winnersRequestMessage := CreateWinnersRequestMessage(agencyNumber)
+	return connection.Send(winnersRequestMessage)
+}
+
+// ReceiveWinnersResponse receives the response to a winners request
+func ReceiveWinnersResponse(connection Connection) (bool, []string, error) {
+	// First read the message type
+	messageTypeData, err := connection.ReceiveExactBytes(1)
+	if err != nil {
+		return false, nil, fmt.Errorf("error reading message type: %v", err)
+	}
+
+	messageType := messageTypeData[0]
+
+	switch messageType {
+	case MessageTypeWinnersNotAvailable:
+		return false, nil, nil
+
+	case MessageTypeWinnersAvailable:
+		// Read number of winners
+		numWinnersData, err := connection.ReceiveExactBytes(1)
+		if err != nil {
+			return false, nil, fmt.Errorf("error reading number of winners: %v", err)
+		}
+		numWinners := int(numWinnersData[0])
+
+		// Read each winner DNI (8 bytes each)
+		winners := make([]string, numWinners)
+		for i := 0; i < numWinners; i++ {
+			dniData, err := connection.ReceiveExactBytes(DNISize)
+			if err != nil {
+				return false, nil, fmt.Errorf("error reading winner DNI %d: %v", i, err)
+			}
+			// Trim whitespace from DNI
+			winners[i] = string(dniData)
+			winners[i] = winners[i][:len(winners[i])-countTrailingSpaces(winners[i])]
+		}
+
+		return true, winners, nil
+
+	default:
+		return false, nil, fmt.Errorf("unexpected message type: %d", messageType)
+	}
+}
+
+// countTrailingSpaces counts trailing spaces in a string
+func countTrailingSpaces(s string) int {
+	count := 0
+	for i := len(s) - 1; i >= 0; i-- {
+		if s[i] == ' ' {
+			count++
+		} else {
+			break
+		}
+	}
+	return count
+}
+
+// ReceiveNotificationResponse receives the response to a notification message
+func ReceiveNotificationResponse(connection Connection) error {
+	// Read notification ACK response
+	data, err := connection.ReceiveExactBytes(1)
+	if err != nil {
+		return fmt.Errorf("error reading notification response: %v", err)
+	}
+
+	if data[0] != MessageTypeNotificationAck {
+		return fmt.Errorf("unexpected response type: %d, expected %d", data[0], MessageTypeNotificationAck)
+	}
+
+	return nil
 }
 
 // serializeBetNumberField converts a bet number string to 4-byte big endian format

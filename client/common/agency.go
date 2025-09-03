@@ -122,6 +122,7 @@ func NewAgencyService(agencyInfo *AgencyInfo, conn Connection, loopAmount int, l
 }
 
 func (cs *AgencyService) ProcessCommunication(signalChan <-chan os.Signal) error {
+	// Step 1: Send all bets and notify completion
 	for batchIndex := 0; batchIndex < cs.agencyInfo.GetBatchCount(); batchIndex++ {
 		// Check for signal before each batch
 		select {
@@ -161,7 +162,17 @@ func (cs *AgencyService) ProcessCommunication(signalChan <-chan os.Signal) error
 		}
 	}
 
-	// Send close message after all batches are sent and acknowledged
+	// Send notification that all bets have been sent
+	if err := SendNotificationMessage(cs.connection, cs.agencyInfo.ID); err != nil {
+		return fmt.Errorf("error sending notification message: %v", err)
+	}
+
+	// Receive notification response
+	if err := ReceiveNotificationResponse(cs.connection); err != nil {
+		return fmt.Errorf("error receiving notification response: %v", err)
+	}
+
+	// Send close message after notification
 	if err := cs.SendCloseMessage(); err != nil {
 		return fmt.Errorf("error sending close message: %v", err)
 	}
@@ -170,6 +181,95 @@ func (cs *AgencyService) ProcessCommunication(signalChan <-chan os.Signal) error
 		cs.agencyInfo.ID, cs.agencyInfo.GetBatchCount())
 
 	return nil
+}
+
+// ProcessWinnersQuery handles the second step: querying for winners with exponential backoff
+func (cs *AgencyService) ProcessWinnersQuery(signalChan <-chan os.Signal, maxRetries int, baseBackoff time.Duration) error {
+	backoff := baseBackoff
+	if backoff == 0 {
+		backoff = 1 * time.Second // Default base backoff
+	}
+
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		select {
+		case <-signalChan:
+			log.Infof("action: signal_received | result: stopping | client_id: %v | winners_query_attempt: %d",
+				cs.agencyInfo.ID, attempt)
+			return fmt.Errorf("client interrupted during winners query")
+		default:
+		}
+
+		log.Infof("action: winners_query_attempt | result: in_progress | client_id: %v | attempt: %d",
+			cs.agencyInfo.ID, attempt+1)
+
+		// Send winners request
+		if err := SendWinnersRequestMessage(cs.connection, cs.agencyInfo.ID); err != nil {
+			log.Errorf("action: send_winners_request | result: fail | client_id: %v | attempt: %d | error: %v",
+				cs.agencyInfo.ID, attempt+1, err)
+			return fmt.Errorf("error sending winners request: %v", err)
+		}
+
+		// Receive winners response
+		available, winners, err := ReceiveWinnersResponse(cs.connection)
+		if err != nil {
+			log.Errorf("action: receive_winners_response | result: fail | client_id: %v | attempt: %d | error: %v",
+				cs.agencyInfo.ID, attempt+1, err)
+			return fmt.Errorf("error receiving winners response: %v", err)
+		}
+
+		if available {
+			// Winners are available!
+			log.Infof("action: consulta_ganadores | result: success | cant_ganadores: %d", len(winners))
+
+			// Send close message
+			if err := cs.SendCloseMessage(); err != nil {
+				log.Errorf("action: send_close_message | result: fail | client_id: %v | error: %v",
+					cs.agencyInfo.ID, err)
+			}
+
+			return nil
+		}
+
+		// Winners not available yet, send close and retry with backoff
+		if err := cs.SendCloseMessage(); err != nil {
+			log.Errorf("action: send_close_message | result: fail | client_id: %v | error: %v",
+				cs.agencyInfo.ID, err)
+		}
+
+		// If this was the last attempt, return error
+		if attempt == maxRetries {
+			return fmt.Errorf("winners not available after %d attempts", maxRetries+1)
+		}
+
+		log.Infof("action: winners_not_available | result: retry_scheduled | client_id: %v | attempt: %d | backoff: %v",
+			cs.agencyInfo.ID, attempt+1, backoff)
+
+		// Sleep with exponential backoff
+		if cs.sleepWithSignalCheck(signalChan, backoff) {
+			return fmt.Errorf("client interrupted during backoff")
+		}
+
+		// Increase backoff exponentially
+		backoff *= 2
+	}
+
+	return fmt.Errorf("winners query failed after %d attempts", maxRetries+1)
+}
+
+func (cs *AgencyService) sleepWithSignalCheck(signalChan <-chan os.Signal, sleepPeriod time.Duration) bool {
+	sleepInterval := 100 * time.Millisecond
+	totalSleep := time.Duration(0)
+	for totalSleep < sleepPeriod {
+		select {
+		case sig := <-signalChan:
+			log.Infof("action: signal_received_during_sleep | result: success | client_id: %v | signal: %v",
+				cs.agencyInfo.ID, sig)
+			return true // Signal received during sleep
+		case <-time.After(sleepInterval):
+			totalSleep += sleepInterval
+		}
+	}
+	return false // No signal received
 }
 
 func (cs *AgencyService) ReceiveAckMessage() (*AckBetMessage, error) {

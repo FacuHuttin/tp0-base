@@ -1,33 +1,19 @@
 import socket
 import logging
 
-TIMEOUT = 1.0
-
 class ShutdownRequestedError(ConnectionError):
     """Raised when a shutdown is requested during an operation"""
     pass
 
-class Connection:
-    """Abstract connection interface"""
-    
-    def receive_exact_bytes(self, count):
-        raise NotImplementedError
-    
-    def send(self, data):
-        raise NotImplementedError
-    
-    def close(self):
-        raise NotImplementedError
-
-class TCPConnection(Connection):
+class TCPConnection:
     """TCP connection implementation for server-side"""
     
-    def __init__(self, client_socket: socket.socket, server=None):
+    def __init__(self, client_socket: socket.socket, timeout, server=None):
         self.client_socket = client_socket
         self.address = client_socket.getpeername() if client_socket else None
         self.server = server  # Reference to server instance for shutdown checking
         # Set a timeout to prevent blocking indefinitely during shutdown
-        self.client_socket.settimeout(TIMEOUT)
+        self.client_socket.settimeout(timeout)
     
     def receive_exact_bytes(self, count):
         """Receive exactly count bytes from the socket"""
@@ -74,6 +60,11 @@ class TCPConnection(Connection):
                 if sent == 0:
                     raise ConnectionError("Socket connection broken")
                 total_sent += sent
+            except socket.timeout:
+                # On timeout, check shutdown flag and continue if not shutting down
+                if self.server and self.server.shutdown_requested:
+                    raise ShutdownRequestedError("Shutdown requested while sending data")
+                continue
             except socket.error as e:
                 logging.error(f"action: send | result: fail | error: {e}")
                 raise

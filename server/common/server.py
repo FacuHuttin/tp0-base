@@ -2,19 +2,22 @@ import socket
 import logging
 import signal
 from .transport import TCPConnection
-from .central import process_communication
-
-TIMEOUT = 1.0
+from .central import Central
 
 class Server:
-    def __init__(self, port, listen_backlog, timeout=TIMEOUT):
+    def __init__(self, port, listen_backlog, timeout, total_agencies):
         # Initialize server socket
         self._server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._server_socket.bind(('', port))
         self._server_socket.listen(listen_backlog)
         self._server_socket.settimeout(timeout)
+
+        self.timeout = timeout
         # Instance-based shutdown flag
         self.shutdown_requested = False
+        
+        # Create central instance for managing lottery logic
+        self.central = Central(total_agencies)
         
         # Register signal handlers
         signal.signal(signal.SIGTERM, self._handle_shutdown)
@@ -64,12 +67,12 @@ class Server:
                 logging.info('action: client_connection_skipped | result: shutdown_requested')
                 return
                 
-            connection = TCPConnection(client_sock, self)
+            connection = TCPConnection(client_sock, self.timeout, self)
             
             addr = connection.get_address()
             logging.info(f'action: client_connection_established | result: success | ip: {addr[0]}')
             
-            success = process_communication(connection, self)
+            success = self.central.process_communication(connection, self)
             
             if success:
                 logging.info(f'action: client_communication | result: success | ip: {addr[0]}')
