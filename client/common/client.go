@@ -137,7 +137,7 @@ func (c *Client) queryWinnersWithBackoff(signalChan <-chan os.Signal) error {
 
 			// Sleep before retrying connection
 			sleepDuration := baseBackoff * time.Duration(attempt+1)
-			log.Infof("action: winners_query_connection_retry | result: scheduled | client_id: %v | sleep: %v",
+			log.Debugf("action: winners_query_connection_retry | result: scheduled | client_id: %v | sleep: %v",
 				c.config.ID, sleepDuration)
 
 			if c.sleepWithSignalCheck(signalChan, sleepDuration) {
@@ -169,7 +169,7 @@ func (c *Client) queryWinnersWithBackoff(signalChan <-chan os.Signal) error {
 
 		// Sleep with exponential backoff before next attempt
 		sleepDuration := baseBackoff * time.Duration(attempt+1)
-		log.Infof("action: winners_query_retry | result: scheduled | client_id: %v | sleep: %v",
+		log.Debugf("action: winners_query_retry | result: scheduled | client_id: %v | sleep: %v",
 			c.config.ID, sleepDuration)
 
 		if c.sleepWithSignalCheck(signalChan, sleepDuration) {
@@ -242,7 +242,7 @@ func (c *Client) connectWithBackoff(signalChan <-chan os.Signal) error {
 		// Calculate incremental sleep duration: baseBackoff * (attempt + 1)
 		sleepDuration := baseBackoff * time.Duration(attempt+1)
 
-		log.Infof("action: connect_retry | result: scheduled | client_id: %v | attempt: %v | sleep: %v",
+		log.Debugf("action: connect_retry | result: scheduled | client_id: %v | attempt: %v | sleep: %v",
 			c.config.ID, attempt+1, sleepDuration)
 
 		// Wait with incremental sleep

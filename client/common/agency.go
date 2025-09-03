@@ -127,7 +127,7 @@ func (cs *AgencyService) ProcessCommunication(signalChan <-chan os.Signal) error
 		// Check for signal before each batch
 		select {
 		case <-signalChan:
-			log.Infof("action: signal_received | result: stopping | client_id: %v | batch: %d",
+			log.Debugf("action: signal_received | result: stopping | client_id: %v | batch: %d",
 				cs.agencyInfo.ID, batchIndex)
 			if err := cs.SendCloseMessage(); err != nil {
 				return fmt.Errorf("error sending close message: %v", err)
@@ -193,7 +193,7 @@ func (cs *AgencyService) ProcessWinnersQuery(signalChan <-chan os.Signal, maxRet
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		select {
 		case <-signalChan:
-			log.Infof("action: signal_received | result: stopping | client_id: %v | winners_query_attempt: %d",
+			log.Debugf("action: signal_received | result: stopping | client_id: %v | winners_query_attempt: %d",
 				cs.agencyInfo.ID, attempt)
 			return fmt.Errorf("client interrupted during winners query")
 		default:
@@ -241,7 +241,7 @@ func (cs *AgencyService) ProcessWinnersQuery(signalChan <-chan os.Signal, maxRet
 			return fmt.Errorf("winners not available after %d attempts", maxRetries+1)
 		}
 
-		log.Infof("action: winners_not_available | result: retry_scheduled | client_id: %v | attempt: %d | backoff: %v",
+		log.Debugf("action: winners_not_available | result: retry_scheduled | client_id: %v | attempt: %d | backoff: %v",
 			cs.agencyInfo.ID, attempt+1, backoff)
 
 		// Sleep with exponential backoff

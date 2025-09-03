@@ -64,7 +64,7 @@ class Server:
         try:
             # Check if shutdown was requested before starting
             if self.shutdown_requested:
-                logging.info('action: client_connection_skipped | result: shutdown_requested')
+                logging.debug('action: client_connection_skipped | result: shutdown_requested')
                 return
                 
             connection = TCPConnection(client_sock, self.timeout, self)
@@ -78,14 +78,14 @@ class Server:
                 logging.info(f'action: client_communication | result: success | ip: {addr[0]}')
             else:
                 if self.shutdown_requested:
-                    logging.info(f'action: client_communication | result: shutdown | ip: {addr[0]}')
+                    logging.debug(f'action: client_communication | result: shutdown | ip: {addr[0]}')
                 else:
                     logging.error(f'action: client_communication | result: fail | ip: {addr[0]}')
                 
         except Exception as e:
             addr = client_sock.getpeername() if client_sock else ('unknown', 0)
             if self.shutdown_requested:
-                logging.info(f"action: handle_client_connection | result: shutdown | ip: {addr[0]} | info: {e}")
+                logging.debug(f"action: handle_client_connection | result: shutdown | ip: {addr[0]} | info: {e}")
             else:
                 logging.error(f"action: handle_client_connection | result: fail | ip: {addr[0]} | error: {e}")
         finally:

@@ -113,7 +113,7 @@ class Central:
         try:
             while True:
                 if server and server.shutdown_requested:
-                    logging.info("action: process_communication | result: shutdown_requested")
+                    logging.debug("action: process_communication | result: shutdown_requested")
                     return True
                 
                 # Receive message type first
@@ -160,7 +160,7 @@ class Central:
                     return False
             
         except ShutdownRequestedError as e:
-            logging.info(f"action: process_communication | result: shutdown | info: {e}")
+            logging.debug(f"action: process_communication | result: shutdown | info: {e}")
             return True
         except ConnectionError as e:
             logging.error(f"action: process_communication | result: fail | error: {e}")
