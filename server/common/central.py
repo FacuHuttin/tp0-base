@@ -41,10 +41,10 @@ class Central:
             logging.info(f"action: agency_completion | result: success | agency: {agency_number} | completed_agencies: {len(self.agencies_completed)} | total_agencies: {self.total_agencies}")
             
             if len(self.agencies_completed) == self.total_agencies:
-                logging.info(f"action: all_agencies_completed_check | completed: {len(self.agencies_completed)} | total: {self.total_agencies} | conducting_lottery: True")
+                logging.debug(f"action: all_agencies_completed_check | completed: {len(self.agencies_completed)} | total: {self.total_agencies} | conducting_lottery: True")
                 return self.conduct_lottery()
             else:
-                logging.info(f"action: all_agencies_completed_check | completed: {len(self.agencies_completed)} | total: {self.total_agencies} | conducting_lottery: False")
+                logging.debug(f"action: all_agencies_completed_check | completed: {len(self.agencies_completed)} | total: {self.total_agencies} | conducting_lottery: False")
             
             return False
     
