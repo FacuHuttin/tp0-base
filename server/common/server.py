@@ -21,7 +21,7 @@ class AgencyHandler(threading.Thread):
         """Handle communication with the connected agency"""
         try:
             addr = self.client_socket.getpeername()
-            logging.info(f'action: agency_handler_start | ip: {addr[0]}')
+            logging.debug(f'action: agency_handler | result: in_progress | ip: {addr[0]}')
             
             # Create connection and handle communication
             self.connection = TCPConnection(self.client_socket, self.server_ref.timeout, self.server_ref)
@@ -30,15 +30,15 @@ class AgencyHandler(threading.Thread):
             success = self.central.process_communication(self.connection, self.server_ref)
             
             if success:
-                logging.info(f'action: agency_communication_completed | ip: {addr[0]}')
+                logging.debug(f'action: agency_communication | result: success | ip: {addr[0]}')
             else:
                 if not self.server_ref.shutdown_requested:
-                    logging.error(f'action: agency_communication_failed | ip: {addr[0]}')
+                    logging.error(f'action: agency_communication | result: fail | ip: {addr[0]}')
                     
         except Exception as e:
             if not self.server_ref.shutdown_requested:
                 addr = self.client_socket.getpeername() if self.client_socket else ('unknown', 0)
-                logging.error(f'action: agency_handler_error | ip: {addr[0]} | error: {e}')
+                logging.error(f'action: agency_handler | result: fail | ip: {addr[0]} | error: {e}')
         finally:
             self.cleanup()
     
@@ -82,7 +82,7 @@ class Server:
         """Handle shutdown signal"""
         with self._shutdown_lock:
             if not self.shutdown_requested:
-                logging.info(f'action: shutdown_signal_received | signal: {signum}')
+                logging.info(f'action: shutdown_signal_received | result: in_progress | signal: {signum}')
                 self.shutdown_requested = True
                 
                 # Close server socket to interrupt accept() calls
@@ -96,9 +96,7 @@ class Server:
         Multithreaded Server that creates one thread per client connection
         Can handle up to total_agencies concurrent connections
         """
-        try:
-            logging.info(f'action: server_start | total_agencies: {self.total_agencies}')
-            
+        try:            
             connections_handled = 0
             
             while not self.shutdown_requested and connections_handled < self.total_agencies:
@@ -122,7 +120,7 @@ class Server:
                         handler.start()
                         connections_handled += 1
                         
-                        logging.info(f'action: agency_connection_accepted | connections_handled: {connections_handled}/{self.total_agencies}')
+                        logging.info(f'action: agency_connection | result: success | connections_handled: {connections_handled}/{self.total_agencies}')
                         
                 except socket.timeout:
                     # Clean up finished threads
