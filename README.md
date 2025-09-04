@@ -18,7 +18,7 @@ python3 mi-generador.py $1 $2
 
 En el archivo de Docker Compose de salida se pueden definir volúmenes, variables de entorno y redes con libertad, pero recordar actualizar este script cuando se modifiquen tales definiciones en los sucesivos ejercicios.
 
-### Implementación
+### Implementación:
 
 #### Archivos creados:
 
@@ -42,12 +42,12 @@ Este archivo de python está encargado de crear el archivo docker-compose.
 Se utilizó las siguientes funciones para obtener la cadena de texo de cada parte del archivo:
 
 * generate_base_content()
- - Devuelve la cadena de texto del encabezado del archivo junto con el servicio del servidor
+  * Devuelve la cadena de texto del encabezado del archivo junto con el servicio del servidor
 
 * generate_network_content()
- - Devuelve la cadena de texto de la red
+  * Devuelve la cadena de texto de la red
 
 * generate_client_content(client_id)
- - Devuelve la cadena de texto especifica para el servicio del cliente <<client_id>>
+  * Devuelve la cadena de texto especifica para el servicio del cliente <client_id>
 
 Luego de obtener las partes, se concatenan y se escribe en la direccion del archivo pasado por parametro. 
