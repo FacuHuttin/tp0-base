@@ -170,7 +170,7 @@ class Server:
         
         for thread in threads_to_wait:
             if thread.is_alive():
-                thread.join()  # Wait indefinitely for each thread to complete
+                thread.join()
         
         logging.info('action: all_threads_finished | result: success')
     
