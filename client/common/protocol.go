@@ -67,7 +67,7 @@ const (
 
 // SerializeBetMessage converts AgencyInfo to bytes according to the protocol:
 // 1st byte: message type (MessageTypeBet)
-// 2nd byte: agency number (same as ID)
+// 2nd byte: agency number
 // Fixed length fields (DNI=8 chars, Birthday=10 chars): direct content
 // Variable length fields (Name, Surname): 1 byte length + string content
 // BetNumber: 4-byte big endian integer
@@ -200,8 +200,6 @@ func deserializeBetNumberField(betBytes []byte) string {
 	// Convert to string
 	return strconv.FormatUint(uint64(betInt), 10)
 }
-
-// Helper functions for common operations
 
 // serializeVariableField adds a variable length field to the result
 // Format: [length_byte][content]

@@ -41,7 +41,7 @@ func NewClient(config ClientConfig) *Client {
 	}
 
 	conn := NewTCPConnection(config.ServerAddress)
-	service := NewAgencyService(agencyInfo, conn, config.LoopAmount, config.LoopPeriod)
+	service := NewAgencyService(agencyInfo, conn)
 
 	client := &Client{
 		service: service,

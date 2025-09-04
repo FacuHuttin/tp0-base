@@ -33,12 +33,12 @@ DNI_SIZE = 8
 BIRTHDAY_SIZE = 10
 BET_NUMBER_SIZE = 4
 MAX_VARIABLE_FIELD_SIZE = 255
+MAX_BYTE_NUMBER_SIZE = 255
 
 # Error message constants
 ERR_INSUFFICIENT_DATA = "insufficient data"
 ERR_INVALID_BET_NUMBER = "invalid bet number: cannot be empty"
 ERR_EMPTY_BET_NUMBER = "invalid BetNumber field: cannot be empty"
-
 
 class AckBetMessage:
     """Represents an acknowledgment message for a bet"""
@@ -67,7 +67,7 @@ class AckBetMessage:
         # Add agency number as second byte
         try:
             agency_num = int(self.agency_number)
-            if 0 <= agency_num <= 255:
+            if 0 <= agency_num <= MAX_BYTE_NUMBER_SIZE:
                 result.append(agency_num)
             else:
                 result.append(0)  # Default fallback for out of range
@@ -84,7 +84,6 @@ class AckBetMessage:
         
         return bytes(result)
 
-
 def serialize_variable_field(content: str) -> bytes:
     """Serializes a variable length field with length prefix"""
     content_bytes = content.encode('utf-8')
@@ -96,7 +95,6 @@ def serialize_variable_field(content: str) -> bytes:
     result.extend(content_bytes)
     return bytes(result)
 
-
 def serialize_fixed_field(content: str, expected_size: int, field_name: str) -> bytes:
     """Serializes a fixed length field and validates its size"""
     content_bytes = content.encode('utf-8')
@@ -104,14 +102,12 @@ def serialize_fixed_field(content: str, expected_size: int, field_name: str) -> 
         raise ValueError(f"invalid {field_name} field: must be {expected_size} characters")
     return content_bytes
 
-
 def validate_message_type(data: bytes, expected_type: int) -> None:
     """Validates the message type byte"""
     if len(data) == 0:
         raise ValueError("empty data")
     if data[0] != expected_type:
         raise ValueError(f"invalid message type: expected {expected_type}, got {data[0]}")
-
 
 def deserialize_bet_message(data: bytes) -> Bet:
     """
@@ -191,7 +187,6 @@ def deserialize_bet_message(data: bytes) -> Bet:
         number=number
     )
 
-
 def create_ack_message(bet: Bet) -> AckBetMessage:
     """Creates an ACK message from bet information"""
     if not str(bet.number) or len(str(bet.number)) == 0:
@@ -203,7 +198,6 @@ def create_ack_message(bet: Bet) -> AckBetMessage:
         bet_number=str(bet.number)
     )
 
-
 def receive_message_type(connection: TCPConnection) -> int:
     """
     Receives and returns the message type from the connection
@@ -214,7 +208,6 @@ def receive_message_type(connection: TCPConnection) -> int:
     except Exception as e:
         logging.error(f"action: receive_message_type | result: fail | error: {e}")
         raise
-
 
 def receive_bet_message_from_connection(connection: TCPConnection) -> bytes:
     """
@@ -267,7 +260,6 @@ def receive_bet_message_from_connection(connection: TCPConnection) -> bytes:
         logging.error(f"action: receive_bet_message_from_connection | result: fail | error: {e}")
         raise
 
-
 def send_ack_message_to_connection(connection: TCPConnection, ack_data: bytes) -> None:
     """
     Sends ACK message to connection
@@ -280,12 +272,6 @@ def send_ack_message_to_connection(connection: TCPConnection, ack_data: bytes) -
         logging.error(f"action: send_ack_message_to_connection | result: fail | error: {e}")
         raise
 
-
-def create_close_message() -> bytes:
-    """Creates a close message to gracefully shutdown the connection"""
-    return bytes([MESSAGE_TYPE_CLOSE])
-
-
 def serialize_bet_number_field(bet_number: str) -> bytes:
     """Converts a bet number string to 4-byte big endian format"""
     try:
@@ -295,7 +281,6 @@ def serialize_bet_number_field(bet_number: str) -> bytes:
         return bet_int.to_bytes(4, byteorder='big')
     except ValueError as e:
         raise ValueError(f"invalid bet number: {bet_number} is not a valid integer") from e
-
 
 def deserialize_bet_number_field(bet_bytes: bytes) -> str:
     """Converts 4-byte big endian format to bet number string"""

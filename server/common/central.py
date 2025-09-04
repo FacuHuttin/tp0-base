@@ -1,9 +1,7 @@
 import logging
 from .utils import Bet, store_bets
 from .transport import TCPConnection
-from .protocol import (
-    MESSAGE_TYPE_BET, MESSAGE_TYPE_ACK, MESSAGE_TYPE_CLOSE,
-    AGENCY_NUMBER_SIZE, DNI_SIZE, BIRTHDAY_SIZE,
+from .protocol import (MESSAGE_TYPE_CLOSE,
     deserialize_bet_message, create_ack_message, receive_message_type,
     receive_bet_message_from_connection, send_ack_message_to_connection
 )
@@ -69,11 +67,3 @@ def process_communication(connection: TCPConnection):
     except Exception as e:
         logging.error(f"action: process_communication | result: fail | error: {e}")
         return False
-
-
-def handle_close_message(connection: TCPConnection):
-    """
-    Handles a close message - just logs it since no response is needed
-    """
-    logging.info("action: close_message_received | result: success")
-    return True

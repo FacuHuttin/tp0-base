@@ -2,7 +2,6 @@ package common
 
 import (
 	"fmt"
-	"time"
 )
 
 type AgencyInfo struct {
@@ -37,16 +36,12 @@ func (c *AgencyInfo) CreateBetMessage(messageID int) (*Message, error) {
 type AgencyService struct {
 	agencyInfo *AgencyInfo
 	connection Connection
-	loopAmount int
-	loopPeriod time.Duration
 }
 
-func NewAgencyService(agencyInfo *AgencyInfo, conn Connection, loopAmount int, loopPeriod time.Duration) *AgencyService {
+func NewAgencyService(agencyInfo *AgencyInfo, conn Connection) *AgencyService {
 	return &AgencyService{
 		agencyInfo: agencyInfo,
 		connection: conn,
-		loopAmount: loopAmount,
-		loopPeriod: loopPeriod,
 	}
 }
 
