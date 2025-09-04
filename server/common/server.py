@@ -2,7 +2,7 @@ import socket
 import logging
 import signal
 import threading
-import time
+
 from .transport import TCPConnection
 from .central import Central
 
@@ -15,7 +15,7 @@ class AgencyHandler(threading.Thread):
         self.central = central
         self.server_ref = server_ref
         self.connection = None
-        self.daemon = True  # Daemon thread will exit when main program exits
+        self.daemon = True
         
     def run(self):
         """Handle communication with the connected agency"""
