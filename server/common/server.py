@@ -2,23 +2,23 @@ import socket
 import logging
 import signal
 
-TIMEOUT = 1.0
-
-# Global shutdown flag
-shutdown_requested = False
-
-def handle_shutdown(signum, frame):
-    global shutdown_requested
-    logging.info(f'action: shutdown_signal_received | result: in_progress')
-    shutdown_requested = True
-
 class Server:
-    def __init__(self, port, listen_backlog, timeout=TIMEOUT):
+    def __init__(self, port, listen_backlog, timeout):
         # Initialize server socket
         self._server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._server_socket.bind(('', port))
         self._server_socket.listen(listen_backlog)
         self._server_socket.settimeout(timeout)
+        # Instance-based shutdown flag
+        self.shutdown_requested = False
+        
+        # Register signal handlers
+        signal.signal(signal.SIGTERM, self._handle_shutdown)
+
+    def _handle_shutdown(self, signum, frame):
+        """Handle shutdown signal"""
+        logging.info(f'action: shutdown_signal_received | result: in_progress')
+        self.shutdown_requested = True
 
     def run(self):
         """
@@ -31,7 +31,7 @@ class Server:
 
         # TODO: Modify this program to handle signal to graceful shutdown
         # the server
-        while not shutdown_requested:
+        while not self.shutdown_requested:
             try:
                 client_sock = self.__accept_new_connection()
                 if client_sock:
@@ -39,7 +39,7 @@ class Server:
             except socket.timeout:
                 continue
             except OSError as e:
-                if shutdown_requested:
+                if self.shutdown_requested:
                     logging.info('action: server_shutdown | result: in_progress')
                 else:
                     logging.error(f'action: accept_error | error: {e}')
@@ -82,9 +82,6 @@ class Server:
         except socket.timeout:
             return None
         except OSError:
-            if shutdown_requested:
+            if self.shutdown_requested:
                 return None
             raise
-
-# Register signal handler
-signal.signal(signal.SIGTERM, handle_shutdown)
