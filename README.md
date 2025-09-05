@@ -6,16 +6,6 @@ Modificar el servidor para que permita aceptar conexiones y procesar mensajes en
 
 ### Implementación:
 
-#### Archivos modificados:
-
-* main.go
-
-* client.go
-
-* central.py
-
-* server.py
-
 #### Aspectos importantes
 
 ##### server.py
@@ -30,4 +20,7 @@ Modificar el servidor para que permita aceptar conexiones y procesar mensajes en
 
 * Se agregó 2 locks de hilos como atributos de la clase `Central`:
   * `_state_lock`, lockea la sección crítica de obtener el resultado de la loteria y de la ejecución de la loteria. 
-  * `_storage_lock`, lockea la sección crítica de almacenamiento de apuestas. 
+  * `_storage_lock`, lockea la sección crítica de almacenamiento de apuestas.
+ 
+##### Comentarios:
+Durante el TP0 realicé una exploración en los archivos .csv de las agencias de lotería para encontrar el tamaño máximo de los campos (Nombre, Apellido, número de apuesta, ...) y con los datos obtenidos hice el cálculo que para el protocolo que implementé, se puede enviar 128 apuestas en un batch sin superar los 8Kb. 
