@@ -18,15 +18,11 @@ class AgencyHandler(threading.Thread):
         self.daemon = True
         
     def run(self):
-        """Handle communication with the connected agency"""
         try:
             addr = self.client_socket.getpeername()
             logging.debug(f'action: agency_handler | result: in_progress | ip: {addr[0]}')
             
-            # Create connection and handle communication
             self.connection = TCPConnection(self.client_socket, self.server_ref.timeout, self.server_ref)
-            
-            # Process all communication with this agency
             success = self.central.process_communication(self.connection, self.server_ref)
             
             if success:
@@ -43,7 +39,6 @@ class AgencyHandler(threading.Thread):
             self.cleanup()
     
     def cleanup(self):
-        """Clean up connection and socket"""
         try:
             if self.connection:
                 self.connection.close()
@@ -77,15 +72,14 @@ class Server:
         
         # Register signal handlers
         signal.signal(signal.SIGTERM, self._handle_shutdown)
+        signal.signal(signal.SIGINT, self._handle_shutdown)
     
     def _handle_shutdown(self, signum, frame):
-        """Handle shutdown signal"""
         with self._shutdown_lock:
             if not self.shutdown_requested:
                 logging.info(f'action: shutdown_signal_received | result: in_progress | signal: {signum}')
                 self.shutdown_requested = True
                 
-                # Close server socket to interrupt accept() calls
                 try:
                     self._server_socket.close()
                 except:
@@ -123,7 +117,6 @@ class Server:
                         logging.info(f'action: agency_connection | result: success | connections_handled: {connections_handled}/{self.total_agencies}')
                         
                 except socket.timeout:
-                    # Clean up finished threads
                     self._cleanup_finished_threads()
                     continue
                 except OSError as e:
@@ -134,7 +127,6 @@ class Server:
                         logging.error(f'action: accept_error | result: fail | error: {e}')
                         break
             
-            # Wait for all agencies to complete their betting
             self._wait_for_all_threads_to_finish()
             
         except Exception as e:
@@ -143,7 +135,6 @@ class Server:
             self._cleanup()
     
     def _accept_new_connection(self):
-        """Accept new connection with proper error handling"""
         try:
             logging.debug('action: accept_connections | result: in_progress')
             client_sock, addr = self._server_socket.accept()
@@ -157,12 +148,10 @@ class Server:
             raise
     
     def _cleanup_finished_threads(self):
-        """Remove finished threads from active threads list"""
         with self._threads_lock:
             self.active_threads = [t for t in self.active_threads if t.is_alive()]
     
     def _wait_for_all_threads_to_finish(self):
-        """Wait for all agency threads to finish processing"""
         logging.info('action: waiting_for_all_threads | result: in_progress')
         
         with self._threads_lock:
@@ -175,25 +164,21 @@ class Server:
         logging.info('action: all_threads_finished | result: success')
     
     def _cleanup(self):
-        """Clean up resources and wait for threads to finish"""
         logging.info('action: server_cleanup | result: in_progress')
         
-        # Set shutdown flag
         with self._shutdown_lock:
             self.shutdown_requested = True
         
-        # Close main server socket
         try:
             self._server_socket.close()
         except:
             pass
         
-        # Wait for all agency threads to finish (with timeout)
         with self._threads_lock:
             active_threads = self.active_threads.copy()
         
         for thread in active_threads:
             if thread.is_alive():
-                thread.join(timeout=2.0)  # Wait up to 2 seconds for each thread
+                thread.join(timeout=2.0)
         
         logging.info('action: server_shutdown | result: success')

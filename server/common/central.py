@@ -31,11 +31,6 @@ class Central:
         self._storage_lock = threading.Lock()
             
     def process_agency_completion(self, agency_number: int) -> bool:
-        """
-        Process agency completion notification and conduct lottery if all agencies are done
-        Returns True if lottery was conducted, False otherwise
-        Thread-safe implementation.
-        """
         with self._state_lock:
             self.agencies_completed.add(agency_number)
             logging.info(f"action: agency_completion | result: success | agency: {agency_number} | completed_agencies: {len(self.agencies_completed)} | total_agencies: {self.total_agencies}")
@@ -53,7 +48,6 @@ class Central:
         if not self.lottery_completed:
             self.lottery_completed = True
             
-            # Load bets in a thread-safe manner
             with self._storage_lock:
                 for bet in load_bets():
                     if has_won(bet):
@@ -68,18 +62,10 @@ class Central:
         return False
     
     def is_lottery_completed(self) -> bool:
-        """
-        Check if the lottery has been completed
-        Thread-safe implementation.
-        """
         with self._state_lock:
             return self.lottery_completed
     
     def get_agency_winners(self, agency_number: int) -> list[str]:
-        """
-        Get the list of winning DNIs for a specific agency
-        Thread-safe implementation.
-        """
         try:
             with self._state_lock:
                 winners = self.agency_winners_dict.get(agency_number, [])
@@ -92,22 +78,14 @@ class Central:
             return []
     
     def process_batch_bet_message(self, data: bytes):
-        """
-        Processes a batch bet message and returns the ACK response
-        """
         try:
-            # Deserialize the incoming batch bet message
             batch_number, bets = deserialize_batch_bet_message(data)
             
-            # Store all bets in the batch (thread-safe)
             with self._storage_lock:
                 store_bets(bets)
 
-            # Create ACK message for the batch
-            agency_number = bets[0].agency if bets else 0  # Get agency from first bet
+            agency_number = bets[0].agency if bets else 0
             ack_message = create_batch_ack_message(agency_number, batch_number)
-            
-            # Serialize ACK message
             ack_data = ack_message.serialize_ack_bet_message()
             
             logging.info(f"action: apuesta_recibida | result: success | cantidad: {len(bets)}")

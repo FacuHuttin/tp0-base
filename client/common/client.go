@@ -10,7 +10,6 @@ import (
 
 var log = logging.MustGetLogger("log")
 
-// ClientConfig Configuration used by the client
 type ClientConfig struct {
 	ID             string
 	ServerAddress  string
@@ -24,14 +23,11 @@ type ClientConfig struct {
 	Timeout        time.Duration
 }
 
-// Client Entity that encapsulates how
 type Client struct {
 	config  ClientConfig
 	service *AgencyService
 }
 
-// NewClient Initializes a new client receiving the configuration
-// as a parameter
 func NewClient(config ClientConfig) (*Client, error) {
 
 	agencyInfo, err := NewAgencyInfo(config.ID, config.BatchMaxAmount, config.BetsFile)
@@ -50,7 +46,6 @@ func NewClient(config ClientConfig) (*Client, error) {
 	return client, nil
 }
 
-// StartClientLoop Send messages to the client until some time threshold is met
 func (c *Client) StartClientLoop(signalChan <-chan os.Signal) int {
 	// Check for signal at the beginning of each iteration
 	select {
@@ -82,9 +77,6 @@ func (c *Client) StartClientLoop(signalChan <-chan os.Signal) int {
 		return 3                     // Error during communication
 	}
 
-	// Keep connection open for step 2 (persistent connection)
-	// c.service.connection.Close() - REMOVED: connection stays open
-
 	log.Infof("action: step1_completed | result: success | client_id: %v", c.config.ID)
 
 	// Step 2: Query for winners using the same connection
@@ -106,84 +98,6 @@ func (c *Client) StartClientLoop(signalChan <-chan os.Signal) int {
 	return 0 // Normal exit
 }
 
-// queryWinnersWithSleep handles step 2: querying for winners with reconnection logic
-// func (c *Client) queryWinnersWithSleep(signalChan <-chan os.Signal) error {
-// 	sleepDuration := 0 * time.Second
-// 	for attempt := 0; attempt <= c.config.MaxRetries; attempt++ {
-// 		select {
-// 		case <-signalChan:
-// 			log.Infof("action: signal_received | result: success | client_id: %v",
-// 				c.config.ID)
-// 			return fmt.Errorf("client interrupted during winners query")
-// 		default:
-// 		}
-
-// 		log.Infof("action: winners_query_connection_attempt | result: in_progress | client_id: %v | attempt: %d",
-// 			c.config.ID, attempt+1)
-
-// 		// Create new connection for step 2
-// 		conn := NewTCPConnection(c.config.ServerAddress)
-// 		c.service.connection = conn
-
-// 		// Try to connect for winners query
-// 		if err := conn.ConnectWithTimeout(c.config.Timeout); err != nil {
-
-// 			if attempt == c.config.MaxRetries {
-// 				return fmt.Errorf("failed to connect for winners query after %d attempts", c.config.MaxRetries+1)
-// 			}
-
-// 			sleepDuration = c.config.BaseSleep * time.Duration(1<<attempt)
-
-// 			log.Debugf("action: winners_query_connection_retry | result: scheduled | client_id: %v | sleep: %v",
-// 				c.config.ID, sleepDuration)
-
-// 			if c.sleepWithSignalCheck(signalChan, sleepDuration) {
-// 				return fmt.Errorf("client interrupted during backoff")
-// 			}
-// 			continue
-// 		}
-
-// 		log.Infof("action: winners_query_connect | result: success | client_id: %v | attempt: %d",
-// 			c.config.ID, attempt+1)
-
-// 		// Try to query winners
-// 		select {
-// 		case <-signalChan:
-// 			log.Debugf("action: signal_received | result: stopping | client_id: %v | winners_query_attempt: %d",
-// 				c.config.ID, attempt)
-// 			return fmt.Errorf("client interrupted during winners query")
-// 		default:
-// 		}
-// 		err := c.service.ProcessWinnersQuery(signalChan, attempt, sleepDuration) // 0 retries as we handle retries here
-// 		conn.Close()
-
-// 		if err == nil {
-// 			// Success!
-// 			return nil
-// 		}
-
-// 		if err.Error() == "client interrupted during winners query" || err.Error() == "client interrupted during backoff" {
-// 			return err
-// 		}
-
-// 		if attempt == c.config.MaxRetries {
-// 			return fmt.Errorf("winners query failed after %d attempts", c.config.MaxRetries+1)
-// 		}
-
-// 		sleepDuration = c.config.BaseSleep * time.Duration(1<<attempt)
-
-// 		log.Debugf("action: winners_query_retry | result: scheduled | client_id: %v | sleep: %v",
-// 			c.config.ID, sleepDuration)
-
-// 		if c.sleepWithSignalCheck(signalChan, sleepDuration) {
-// 			return fmt.Errorf("client interrupted during backoff")
-// 		}
-// 	}
-
-// 	return fmt.Errorf("winners query failed after %d attempts", c.config.MaxRetries+1)
-// }
-
-// queryWinnersWithPersistentConnection handles step 2: querying for winners using the existing connection
 func (c *Client) queryWinnersWithPersistentConnection(signalChan <-chan os.Signal) error {
 	sleepDuration := 0 * time.Second
 	for attempt := 0; attempt <= c.config.MaxRetries; attempt++ {
@@ -242,7 +156,6 @@ func (c *Client) sleepWithSignalCheck(signalChan <-chan os.Signal, sleepPeriod t
 	return false
 }
 
-// connectWithSleep attempts to connect with fixed timeout and incremental sleep
 func (c *Client) connectWithSleep(signalChan <-chan os.Signal) error {
 	for attempt := 0; attempt <= c.config.MaxRetries; attempt++ {
 		log.Infof("action: connect_attempt | result: in_progress | client_id: %v | attempt: %v | timeout: %v",

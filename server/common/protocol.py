@@ -111,16 +111,13 @@ class AckBetMessage:
         """        
         result = bytearray()
         
-        # Add message type as first byte
         result.append(MESSAGE_TYPE_ACK)
         
-        # Add agency number as second byte (validate range)
         if 0 <= self.agency_number <= MAX_BYTE_VALUE:
             result.append(self.agency_number)
         else:
             raise ValueError(f"Agency number out of range: {self.agency_number} (must be 0-255)")
         
-        # Add batch number as 4-byte big endian integer
         if 0 <= self.batch_number <= MAX_4BYTE_VALUE:
             batch_bytes = self.batch_number.to_bytes(4, byteorder='big')
             result.extend(batch_bytes)
@@ -165,88 +162,6 @@ def validate_message_type(data: bytes, expected_type: int) -> None:
         raise ValueError("empty data")
     if data[0] != expected_type:
         raise ValueError(f"invalid message type: expected {expected_type}, got {data[0]}")
-
-
-# def deserialize_bet_message(data: bytes) -> Bet:
-#     """
-#     Deserializes a single bet message according to the protocol.
-
-#     Protocol format:
-#     - 1st byte: message type (MESSAGE_TYPE_BET)
-#     - 2nd byte: agency number
-#     - Variable length fields (Name, Surname): [length_byte][content]
-#     - Fixed length fields (DNI=8 chars, Birthday=10 chars): [content]
-#     - BetNumber: 4-byte big endian unsigned integer
-    
-#     Args:
-#         data (bytes): Raw message data to deserialize
-        
-#     Returns:
-#         Bet: Parsed bet object from utils.py
-        
-#     Raises:
-#         ValueError: If data is malformed or too short
-#     """
-#     if len(data) < 2:
-#         raise ValueError("data too short: missing message type and agency number")
-    
-#     pos = 0
-    
-#     # Check message type
-#     validate_message_type(data, MESSAGE_TYPE_BET)
-#     pos += MESSAGE_TYPE_SIZE
-    
-#     # Extract agency number (second byte)
-#     agency_number = data[pos]
-#     pos += AGENCY_NUMBER_SIZE
-    
-#     # Deserialize Name field: length byte + content
-#     if pos >= len(data):
-#         raise ValueError("data too short: missing length for Name field")
-#     name_length = data[pos]
-#     pos += LENGTH_FIELD_SIZE
-#     if pos + name_length > len(data):
-#         raise ValueError("data too short: missing content for Name field")
-#     first_name = data[pos:pos + name_length].decode('utf-8')
-#     pos += name_length
-    
-#     # Deserialize Surname field: length byte + content
-#     if pos >= len(data):
-#         raise ValueError("data too short: missing length for Surname field")
-#     surname_length = data[pos]
-#     pos += LENGTH_FIELD_SIZE
-#     if pos + surname_length > len(data):
-#         raise ValueError("data too short: missing content for Surname field")
-#     last_name = data[pos:pos + surname_length].decode('utf-8')
-#     pos += surname_length
-    
-#     # Deserialize DNI field: fixed characters, no length byte
-#     if pos + DNI_SIZE > len(data):
-#         raise ValueError(f"data too short: missing DNI field ({DNI_SIZE} chars)")
-#     document = data[pos:pos + DNI_SIZE].decode('utf-8').rstrip()
-#     pos += DNI_SIZE
-    
-#     # Deserialize Birthday field: fixed characters, no length byte
-#     if pos + BIRTHDAY_SIZE > len(data):
-#         raise ValueError(f"data too short: missing Birthday field ({BIRTHDAY_SIZE} chars)")
-#     birthdate = data[pos:pos + BIRTHDAY_SIZE].decode('utf-8').rstrip()
-#     pos += BIRTHDAY_SIZE
-    
-#     # Deserialize BetNumber field: fixed 4-byte big endian integer
-#     if pos + BET_NUMBER_SIZE > len(data):
-#         raise ValueError(f"data too short: missing BetNumber field ({BET_NUMBER_SIZE} bytes)")
-#     bet_number_bytes = data[pos:pos + BET_NUMBER_SIZE]
-#     number = deserialize_bet_number_field(bet_number_bytes)
-#     pos += BET_NUMBER_SIZE
-    
-#     return Bet(
-#         agency=agency_number,
-#         first_name=first_name,
-#         last_name=last_name,
-#         document=document,
-#         birthdate=birthdate,
-#         number=number
-#     )
 
 
 def create_batch_ack_message(agency_number: int, batch_number: int) -> AckBetMessage:

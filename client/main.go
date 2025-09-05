@@ -132,7 +132,7 @@ func main() {
 
 	// Setup signal handling for graceful shutdown
 	signalChan := make(chan os.Signal, 1)
-	signal.Notify(signalChan, syscall.SIGTERM)
+	signal.Notify(signalChan, syscall.SIGTERM, syscall.SIGINT)
 
 	client, err := common.NewClient(clientConfig)
 	if err != nil {

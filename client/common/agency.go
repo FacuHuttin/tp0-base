@@ -1,6 +1,7 @@
 package common
 
 import (
+	"bufio"
 	"encoding/csv"
 	"fmt"
 	"os"
@@ -19,7 +20,9 @@ type AgencyInfo struct {
 	ID             string
 	BatchMaxAmount int
 	BetsFile       string
-	Bets           [][]Bet
+	totalBets      int
+	batchCount     int
+	currentOffset  int
 }
 
 type Message struct {
@@ -33,45 +36,83 @@ func NewAgencyInfo(id string, batchMaxAmount int, betsFile string) (*AgencyInfo,
 		ID:             id,
 		BatchMaxAmount: batchMaxAmount,
 		BetsFile:       betsFile,
-		Bets:           [][]Bet{},
+		currentOffset:  0,
 	}
 
-	if err := agency.LoadBetsFromFile(); err != nil {
-		return nil, fmt.Errorf("error loading bets from file: %v", err)
+	if err := agency.countTotalBets(); err != nil {
+		return nil, fmt.Errorf("error counting bets from file: %v", err)
 	}
 
 	return agency, nil
 }
 
-func (c *AgencyInfo) LoadBetsFromFile() error {
+func (c *AgencyInfo) countTotalBets() error {
 	file, err := os.Open(c.BetsFile)
 	if err != nil {
 		return fmt.Errorf("error opening bets file: %v", err)
 	}
 	defer file.Close()
 
-	reader := csv.NewReader(file)
-	records, err := reader.ReadAll()
-	if err != nil {
+	scanner := bufio.NewScanner(file)
+	lineCount := 0
+	for scanner.Scan() {
+		lineCount++
+	}
+
+	if err := scanner.Err(); err != nil {
 		return fmt.Errorf("error reading CSV file: %v", err)
 	}
 
-	if len(records) == 0 {
+	if lineCount == 0 {
 		return fmt.Errorf("CSV file is empty")
 	}
 
-	// Parse records into Bet structures
-	var allBets []Bet
-	for i, record := range records {
-		if len(record) != 5 {
-			return fmt.Errorf("invalid CSV format at row %d: expected 5 columns (Name,Surname,DNI,Birthday,BetNumber), got %d", i+1, len(record))
+	c.totalBets = lineCount
+	c.batchCount = (lineCount + c.BatchMaxAmount - 1) / c.BatchMaxAmount
+
+	return nil
+}
+
+func (c *AgencyInfo) readNextBatch() ([]Bet, error) {
+	file, err := os.Open(c.BetsFile)
+	if err != nil {
+		return nil, fmt.Errorf("error opening bets file: %v", err)
+	}
+	defer file.Close()
+
+	if c.currentOffset >= c.totalBets {
+		return nil, fmt.Errorf("no more bets to read")
+	}
+
+	reader := csv.NewReader(file)
+	var batch []Bet
+
+	for i := 0; i < c.currentOffset; i++ {
+		_, err := reader.Read()
+		if err != nil {
+			return nil, fmt.Errorf("error skipping to offset %d: %v", c.currentOffset, err)
+		}
+	}
+
+	end := c.currentOffset + c.BatchMaxAmount
+	if end > c.totalBets {
+		end = c.totalBets
+	}
+
+	for i := c.currentOffset; i < end; i++ {
+		record, err := reader.Read()
+		if err != nil {
+			return nil, fmt.Errorf("error reading CSV record at line %d: %v", i+1, err)
 		}
 
-		// Validate required fields are not empty
+		if len(record) != 5 {
+			return nil, fmt.Errorf("invalid CSV format at row %d: expected 5 columns (Name,Surname,DNI,Birthday,BetNumber), got %d", i+1, len(record))
+		}
+
 		for j, field := range record {
 			if field == "" {
 				fieldNames := []string{"Name", "Surname", "DNI", "Birthday", "BetNumber"}
-				return fmt.Errorf("invalid CSV format at row %d: %s cannot be empty", i+1, fieldNames[j])
+				return nil, fmt.Errorf("invalid CSV format at row %d: %s cannot be empty", i+1, fieldNames[j])
 			}
 		}
 
@@ -82,29 +123,13 @@ func (c *AgencyInfo) LoadBetsFromFile() error {
 			Birthday:  record[3],
 			BetNumber: record[4],
 		}
-		allBets = append(allBets, bet)
+		batch = append(batch, bet)
 	}
 
-	// Create batches based on BatchMaxAmount
-	var batches [][]Bet
-	for i := 0; i < len(allBets); i += c.BatchMaxAmount {
-		end := i + c.BatchMaxAmount
-		if end > len(allBets) {
-			end = len(allBets)
-		}
-		batch := allBets[i:end]
-		batches = append(batches, batch)
-	}
-
-	c.Bets = batches
-
-	fmt.Printf("Successfully loaded %d bets into %d batches (max %d bets per batch)\n",
-		len(allBets), len(batches), c.BatchMaxAmount)
-
-	return nil
+	c.currentOffset = end
+	return batch, nil
 }
 
-// AgencyService handles the communication logic for the agency
 type AgencyService struct {
 	agencyInfo *AgencyInfo
 	connection Connection
@@ -171,16 +196,12 @@ func (cs *AgencyService) ProcessCommunication(signalChan <-chan os.Signal) error
 		return fmt.Errorf("error receiving notification response: %v", err)
 	}
 
-	// Don't send close message here - keep connection open for winner queries
-	// The close message will be sent only after winners are successfully retrieved
-
 	log.Infof("action: communication_completed | result: success | client_id: %v | total_batches: %d",
 		cs.agencyInfo.ID, cs.agencyInfo.GetBatchCount())
 
 	return nil
 }
 
-// ProcessWinnersQuery handles the second step: querying for winners
 func (cs *AgencyService) ProcessWinnersQuery(signalChan <-chan os.Signal, attempt int, sleepTime time.Duration) error {
 	select {
 	case <-signalChan:
@@ -238,24 +259,17 @@ func (cs *AgencyService) SendCloseMessage() error {
 	return SendCloseMessage(cs.connection)
 }
 
-// GetBatch returns the batch at the specified index
 func (c *AgencyInfo) GetBatch(index int) ([]Bet, error) {
-	if index < 0 || index >= len(c.Bets) {
-		return nil, fmt.Errorf("batch index %d out of range [0, %d)", index, len(c.Bets))
+	batchCount := c.GetBatchCount()
+	if index < 0 || index >= batchCount {
+		return nil, fmt.Errorf("batch index %d out of range [0, %d)", index, batchCount)
 	}
-	return c.Bets[index], nil
+
+	c.currentOffset = index * c.BatchMaxAmount
+
+	return c.readNextBatch()
 }
 
-// GetBatchCount returns the total number of batches
 func (c *AgencyInfo) GetBatchCount() int {
-	return len(c.Bets)
-}
-
-// GetTotalBetsCount returns the total number of bets across all batches
-func (c *AgencyInfo) GetTotalBetsCount() int {
-	total := 0
-	for _, batch := range c.Bets {
-		total += len(batch)
-	}
-	return total
+	return c.batchCount
 }
