@@ -147,7 +147,7 @@ func NewAgencyService(agencyInfo *AgencyInfo, conn Connection, loopAmount int, l
 }
 
 func (cs *AgencyService) ProcessCommunication(signalChan <-chan os.Signal) error {
-	for batchIndex := 0; batchIndex < cs.agencyInfo.GetBatchCount(); batchIndex++ {
+	for batchIndex := 0; batchIndex < cs.agencyInfo.batchCount; batchIndex++ {
 		// Check for signal before each batch
 		select {
 		case <-signalChan:
@@ -197,7 +197,7 @@ func (cs *AgencyService) ProcessCommunication(signalChan <-chan os.Signal) error
 	}
 
 	log.Infof("action: communication_completed | result: success | client_id: %v | total_batches: %d",
-		cs.agencyInfo.ID, cs.agencyInfo.GetBatchCount())
+		cs.agencyInfo.ID, cs.agencyInfo.batchCount)
 
 	return nil
 }
@@ -233,7 +233,7 @@ func (cs *AgencyService) ProcessWinnersQuery(signalChan <-chan os.Signal, attemp
 		// Winners are available!
 		log.Infof("action: consulta_ganadores | result: success | cant_ganadores: %d", len(winners))
 
-		// Send close message only when winners are available (end of communication)
+		// Send close message only when winners are available
 		if err := cs.SendCloseMessage(); err != nil {
 			log.Errorf("action: send_close_message | result: fail | client_id: %v | error: %v",
 				cs.agencyInfo.ID, err)
@@ -241,9 +241,6 @@ func (cs *AgencyService) ProcessWinnersQuery(signalChan <-chan os.Signal, attemp
 
 		return nil
 	}
-
-	// Winners not available yet, don't send close message (keep connection open)
-	// The connection will be reused for the next winners query attempt
 
 	log.Debugf("action: winners_not_available | result: in_progress | client_id: %v | attempt: %d | sleep_time: %v",
 		cs.agencyInfo.ID, attempt+1, sleepTime)
@@ -260,9 +257,8 @@ func (cs *AgencyService) SendCloseMessage() error {
 }
 
 func (c *AgencyInfo) GetBatch(index int) ([]Bet, error) {
-	batchCount := c.GetBatchCount()
-	if index < 0 || index >= batchCount {
-		return nil, fmt.Errorf("batch index %d out of range [0, %d)", index, batchCount)
+	if index < 0 || index >= c.batchCount {
+		return nil, fmt.Errorf("batch index %d out of range [0, %d)", index, c.batchCount)
 	}
 
 	c.currentOffset = index * c.BatchMaxAmount
@@ -270,6 +266,3 @@ func (c *AgencyInfo) GetBatch(index int) ([]Bet, error) {
 	return c.readNextBatch()
 }
 
-func (c *AgencyInfo) GetBatchCount() int {
-	return c.batchCount
-}
